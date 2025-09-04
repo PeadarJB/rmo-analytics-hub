@@ -1,20 +1,43 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Select, Button, Space, message } from 'antd';
+import { Card, Select, Button, Space, message, theme } from 'antd';
 import Swipe from '@arcgis/core/widgets/Swipe';
 import useAppStore from '@/store/useAppStore';
 import { CONFIG, KPI_LABELS } from '@/config/appConfig';
 import RendererService from '@/services/RendererService';
+import type { KPIKey } from '@/config/appConfig';
 
 const SimpleSwipePanel: React.FC = () => {
   const { mapView, roadLayer, roadLayerSwipe, setShowSwipe, activeKpi } = useAppStore();
-  const [leftYear, setLeftYear] = useState<number>(2025);
-  const [rightYear, setRightYear] = useState<number>(2018);
+  const { token } = theme.useToken();
+  
+  // Use a default for the right year based on the available years, prioritizing the second-latest
+  const defaultRightYear = CONFIG.filters.year.options?.[1]?.value || 2018;
+  const [leftYear, setLeftYear] = useState<number>(CONFIG.defaultYears[0]);
+  const [rightYear, setRightYear] = useState<number>(defaultRightYear);
   const [swipe, setSwipe] = useState<Swipe | null>(null);
 
-  // Initialize swipe widget
+  // Initialize swipe widget and layers
   useEffect(() => {
-    if (!mapView || !roadLayer || !roadLayerSwipe) return;
+    // Guards to ensure map layers are loaded before proceeding
+    if (!mapView || !roadLayer || !roadLayerSwipe) {
+      if (mapView) {
+        // If the layers aren't ready, display a warning
+        message.warning('Road layers for swipe comparison are still loading.');
+      }
+      return;
+    }
 
+    // Set the initial renderers for both layers
+    try {
+      (roadLayer as any).renderer = RendererService.createKPIRenderer(activeKpi, leftYear);
+      (roadLayerSwipe as any).renderer = RendererService.createKPIRenderer(activeKpi, rightYear);
+    } catch (error) {
+      console.error('Error applying initial renderers to swipe layers:', error);
+      message.error('Failed to initialize swipe panel renderers.');
+      return;
+    }
+
+    // Create and add the swipe widget
     const widget = new Swipe({
       view: mapView,
       leadingLayers: [roadLayer],
@@ -25,6 +48,7 @@ const SimpleSwipePanel: React.FC = () => {
     mapView.ui.add(widget);
     setSwipe(widget);
 
+    // Cleanup function to remove the widget on component unmount
     return () => {
       mapView.ui.remove(widget);
       widget.destroy();
@@ -39,9 +63,10 @@ const SimpleSwipePanel: React.FC = () => {
     try {
       const renderer = RendererService.createKPIRenderer(activeKpi, leftYear);
       (roadLayer as any).renderer = renderer;
-      message.success(`Left side: ${KPI_LABELS[activeKpi]} for ${leftYear}`);
+      message.success(`Left side: ${KPI_LABELS[activeKpi]} for ${leftYear}`, 2);
     } catch (error) {
       console.error('Error updating left layer renderer:', error);
+      message.error('Failed to update left layer visualization.');
     }
   }, [leftYear, activeKpi, roadLayer]);
 
@@ -52,9 +77,10 @@ const SimpleSwipePanel: React.FC = () => {
     try {
       const renderer = RendererService.createKPIRenderer(activeKpi, rightYear);
       (roadLayerSwipe as any).renderer = renderer;
-      message.success(`Right side: ${KPI_LABELS[activeKpi]} for ${rightYear}`);
+      message.success(`Right side: ${KPI_LABELS[activeKpi]} for ${rightYear}`, 2);
     } catch (error) {
       console.error('Error updating right layer renderer:', error);
+      message.error('Failed to update right layer visualization.');
     }
   }, [rightYear, activeKpi, roadLayerSwipe]);
 
@@ -70,6 +96,10 @@ const SimpleSwipePanel: React.FC = () => {
       actions={[
         <Button key="close" onClick={() => setShowSwipe(false)}>Close</Button>
       ]}
+      style={{
+        boxShadow: token.boxShadow,
+        borderRadius: token.borderRadius
+      }}
     >
       <Space direction="vertical" style={{ width: '100%' }}>
         <div>

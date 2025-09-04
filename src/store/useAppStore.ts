@@ -9,6 +9,7 @@ import { CONFIG, KPI_LABELS, type KPIKey } from '@/config/appConfig';
 import MapViewService from '@/services/MapViewService';
 import QueryService from '@/services/QueryService';
 import StatisticsService from '@/services/StatisticsService';
+import RendererService from '@/services/RendererService';
 import type { FilterState, SummaryStatistics } from '@/types';
 
 type ThemeMode = 'light' | 'dark';
@@ -52,6 +53,7 @@ interface AppState {
   clearAllFilters: () => void;
   applyFilters: () => Promise<void>;
   calculateStatistics: () => Promise<void>;
+  updateRenderer: () => void;
 }
 
 const initialFilters: FilterState = {
@@ -59,6 +61,15 @@ const initialFilters: FilterState = {
   subgroup: [],
   route: [],
   year: CONFIG.defaultYears.slice()
+};
+
+// Map subgroup codes to field names
+const SUBGROUP_FIELD_MAP: Record<number, string> = {
+  10: 'Roads_Joined_IsFormerNa',  // Former National
+  20: 'Roads_Joined_IsDublin',    // Dublin
+  30: 'Roads_Joined_IsCityTown',  // City/Town
+  40: 'Roads_Joined_IsPeat',      // Peat
+  50: 'Rural'  // Special case - all flags = 0
 };
 
 const useAppStore = create<AppState>()(
@@ -94,7 +105,11 @@ const useAppStore = create<AppState>()(
         setShowChart: (b) => set({ showChart: b, showFilters: b ? false : get().showFilters }),
         setShowSwipe: (b) => set({ showSwipe: b }),
 
-        setActiveKpi: (k) => set({ activeKpi: k }),
+        setActiveKpi: (k) => {
+          set({ activeKpi: k });
+          get().updateRenderer();
+          get().calculateStatistics();
+        },
 
         setFilters: (f) => set({ currentFilters: { ...get().currentFilters, ...f } }),
         clearAllFilters: () => set({ currentFilters: { ...initialFilters, year: [] }, currentStats: null }),
@@ -105,6 +120,7 @@ const useAppStore = create<AppState>()(
             const { view, webmap } = await MapViewService.initializeMapView(containerId, CONFIG.webMapId);
             const road = webmap.allLayers.find((l: any) => l.title === CONFIG.roadNetworkLayerTitle) as FeatureLayer | undefined;
             const roadSwipe = webmap.allLayers.find((l: any) => l.title === CONFIG.roadNetworkLayerSwipeTitle) as FeatureLayer | undefined;
+            
             set({
               mapView: view,
               webmap,
@@ -113,6 +129,11 @@ const useAppStore = create<AppState>()(
               initialExtent: view.extent ?? null,
               loading: false
             });
+            
+            // Apply initial renderer
+            if (road) {
+              get().updateRenderer();
+            }
           } catch (e: any) {
             console.error(e);
             set({ error: e?.message || 'Failed to initialize map', loading: false });
@@ -127,29 +148,60 @@ const useAppStore = create<AppState>()(
             await get().calculateStatistics();
             return;
           }
+          
           const clauses: string[] = [];
           const f = currentFilters;
-          const fields = CONFIG.fields;
 
+          // Local Authority filter
           if (f.localAuthority.length) {
             const inVals = f.localAuthority.map(v => `'${v.replace("'", "''")}'`).join(',');
-            clauses.push(`${fields.la} IN (${inVals})`);
+            clauses.push(`${CONFIG.fields.la} IN (${inVals})`);
           }
+
+          // Subgroup filter - using boolean fields
           if (f.subgroup.length) {
-            clauses.push(`${fields.subgroup} IN (${f.subgroup.join(',')})`);
+            const subgroupClauses: string[] = [];
+            
+            for (const code of f.subgroup) {
+              const fieldName = SUBGROUP_FIELD_MAP[code];
+              
+              if (code === 50) {
+                // Rural: all flags must be 0
+                subgroupClauses.push(
+                  `(Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)`
+                );
+              } else if (fieldName && fieldName !== 'Rural') {
+                // Other subgroups: check if flag = 1
+                subgroupClauses.push(`${fieldName} = 1`);
+              }
+            }
+            
+            // Use OR between different subgroup selections
+            if (subgroupClauses.length > 0) {
+              clauses.push(`(${subgroupClauses.join(' OR ')})`);
+            }
           }
+
+          // Route filter
           if (f.route.length) {
             const inVals = f.route.map(v => `'${v.replace("'", "''")}'`).join(',');
-            clauses.push(`${fields.route} IN (${inVals})`);
+            clauses.push(`${CONFIG.fields.route} IN (${inVals})`);
           }
-          if (f.year.length) {
-            clauses.push(`${fields.year} IN (${f.year.join(',')})`);
-          }
+
+          // Year filter - will be handled differently for KPI fields
+          // Since year is part of the field name (e.g., roads_csv_iri_2025),
+          // we'll need to handle this in the renderer and statistics services
+          // The definitionExpression won't filter by year directly
+          
           const where = clauses.length ? clauses.join(' AND ') : '1=1';
           (roadLayer as any).definitionExpression = where;
 
-          // Zoom to selection (placeholder extent if empty)
+          // Zoom to selection
           await QueryService.zoomToDefinition(get().mapView, roadLayer, where);
+          
+          // Update renderer for the selected year and KPI
+          get().updateRenderer();
+          
           set({ showStats: true });
           await get().calculateStatistics();
         },
@@ -158,6 +210,27 @@ const useAppStore = create<AppState>()(
           const { roadLayer, currentFilters, activeKpi } = get();
           const stats = await StatisticsService.computeSummary(roadLayer, currentFilters, activeKpi);
           set({ currentStats: stats });
+        },
+        
+        updateRenderer: () => {
+          const { roadLayer, activeKpi, currentFilters } = get();
+          if (!roadLayer) return;
+          
+          // Use the first selected year, or default to most recent (2025)
+          const year = currentFilters.year.length > 0 
+            ? currentFilters.year[0] 
+            : CONFIG.defaultYears[0];
+          
+          try {
+            // Create and apply the renderer for the current KPI and year
+            const renderer = RendererService.createKPIRenderer(activeKpi, year);
+            (roadLayer as any).renderer = renderer;
+            
+            message.success(`Showing ${KPI_LABELS[activeKpi]} for ${year}`);
+          } catch (error) {
+            console.error('Error updating renderer:', error);
+            message.error('Failed to update map visualization');
+          }
         }
       }),
       { name: 'rmo-app' }

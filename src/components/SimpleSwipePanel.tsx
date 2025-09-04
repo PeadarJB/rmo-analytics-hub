@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Select, Button, Space } from 'antd';
+import { Card, Select, Button, Space, message } from 'antd';
 import Swipe from '@arcgis/core/widgets/Swipe';
 import useAppStore from '@/store/useAppStore';
-import { CONFIG } from '@/config/appConfig';
+import { CONFIG, KPI_LABELS } from '@/config/appConfig';
+import RendererService from '@/services/RendererService';
 
 const SimpleSwipePanel: React.FC = () => {
-  const { mapView, roadLayer, roadLayerSwipe, setShowSwipe } = useAppStore();
+  const { mapView, roadLayer, roadLayerSwipe, setShowSwipe, activeKpi } = useAppStore();
   const [leftYear, setLeftYear] = useState<number>(2025);
   const [rightYear, setRightYear] = useState<number>(2018);
   const [swipe, setSwipe] = useState<Swipe | null>(null);
 
+  // Initialize swipe widget
   useEffect(() => {
     if (!mapView || !roadLayer || !roadLayerSwipe) return;
 
@@ -19,6 +21,7 @@ const SimpleSwipePanel: React.FC = () => {
       trailingLayers: [roadLayerSwipe],
       position: 50
     });
+    
     mapView.ui.add(widget);
     setSwipe(widget);
 
@@ -29,32 +32,73 @@ const SimpleSwipePanel: React.FC = () => {
     };
   }, [mapView, roadLayer, roadLayerSwipe]);
 
+  // Update left layer renderer when year or KPI changes
   useEffect(() => {
-    if (roadLayer) (roadLayer as any).definitionExpression = `${CONFIG.fields.year} = ${leftYear}`;
-  }, [leftYear, roadLayer]);
+    if (!roadLayer) return;
+    
+    try {
+      const renderer = RendererService.createKPIRenderer(activeKpi, leftYear);
+      (roadLayer as any).renderer = renderer;
+      message.success(`Left side: ${KPI_LABELS[activeKpi]} for ${leftYear}`);
+    } catch (error) {
+      console.error('Error updating left layer renderer:', error);
+    }
+  }, [leftYear, activeKpi, roadLayer]);
 
+  // Update right layer renderer when year or KPI changes
   useEffect(() => {
-    if (roadLayerSwipe) (roadLayerSwipe as any).definitionExpression = `${CONFIG.fields.year} = ${rightYear}`;
-  }, [rightYear, roadLayerSwipe]);
+    if (!roadLayerSwipe) return;
+    
+    try {
+      const renderer = RendererService.createKPIRenderer(activeKpi, rightYear);
+      (roadLayerSwipe as any).renderer = renderer;
+      message.success(`Right side: ${KPI_LABELS[activeKpi]} for ${rightYear}`);
+    } catch (error) {
+      console.error('Error updating right layer renderer:', error);
+    }
+  }, [rightYear, activeKpi, roadLayerSwipe]);
 
-  const yearOptions = CONFIG.filters.year.options?.map(o => ({ label: o.label, value: o.value })) ?? [];
+  const yearOptions = CONFIG.filters.year.options?.map(o => ({ 
+    label: o.label, 
+    value: o.value 
+  })) ?? [];
 
   return (
-    <Card size="small" title="Swipe Compare" actions={[
-      <Button key="close" onClick={() => setShowSwipe(false)}>Close</Button>
-    ]}>
+    <Card 
+      size="small" 
+      title={`Swipe Compare - ${KPI_LABELS[activeKpi]}`}
+      actions={[
+        <Button key="close" onClick={() => setShowSwipe(false)}>Close</Button>
+      ]}
+    >
       <Space direction="vertical" style={{ width: '100%' }}>
         <div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Left Year</div>
-          <Select style={{ width: '100%' }} options={yearOptions} value={leftYear} onChange={setLeftYear} />
+          <Select 
+            style={{ width: '100%' }} 
+            options={yearOptions} 
+            value={leftYear} 
+            onChange={setLeftYear} 
+          />
         </div>
         <div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Right Year</div>
-          <Select style={{ width: '100%' }} options={yearOptions} value={rightYear} onChange={setRightYear} />
+          <Select 
+            style={{ width: '100%' }} 
+            options={yearOptions} 
+            value={rightYear} 
+            onChange={setRightYear} 
+          />
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
+          <strong>Tip:</strong> Drag the swipe handle to compare {KPI_LABELS[activeKpi]} condition between {leftYear} and {rightYear}.
+          Change the KPI using the selector in the header to compare different metrics.
         </div>
         <div style={{ fontSize: 12, opacity: 0.7 }}>
-          Tip: This uses two copies of the road layer and sets a definitionExpression on each for the chosen year.
-          Replace field names and layer titles in <code>appConfig.ts</code> once you have real data.
+          <strong>Color Legend:</strong><br/>
+          🟢 Green = Good condition<br/>
+          🟡 Yellow = Fair condition<br/>
+          🔴 Red = Poor condition
         </div>
       </Space>
     </Card>

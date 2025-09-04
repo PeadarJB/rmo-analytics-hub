@@ -1,61 +1,17 @@
 import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';
-import type { KPIKey } from '@/config/appConfig';
+import { 
+  KPIKey, 
+  KPI_THRESHOLDS, 
+  RENDERER_CONFIG, 
+  getKPIFieldName,
+  getConditionClass 
+} from '@/config/appConfig';
 
-// Color scheme for condition classes
-const COLORS = {
-  veryGood: [0, 128, 0, 0.8],    // Dark green
-  good: [144, 238, 144, 0.8],    // Light green
-  fair: [255, 255, 0, 0.8],      // Yellow
-  poor: [255, 165, 0, 0.8],      // Orange
-  veryPoor: [255, 0, 0, 0.8]     // Red
-};
-
-// Simplified 3-class colors for cleaner visualization
-const SIMPLE_COLORS = {
-  good: [76, 175, 80, 0.9],      // Green
-  fair: [255, 193, 7, 0.9],      // Amber
-  poor: [244, 67, 54, 0.9]       // Red
-};
-
-// KPI thresholds based on 2018 report
-const KPI_THRESHOLDS = {
-  iri: {
-    veryGood: 3,
-    good: 4,
-    fair: 5,
-    poor: 7
-  },
-  rut: {
-    veryGood: 6,
-    good: 9,
-    fair: 15,
-    poor: 20
-  },
-  csc: {
-    veryPoor: 0.35,
-    poor: 0.40,
-    fair: 0.45,
-    good: 0.50
-  },
-  lpv3: {
-    veryGood: 2,
-    good: 4,
-    fair: 7,
-    poor: 10
-  },
-  psci: {
-    veryPoor: 2,
-    poor: 4,
-    fair: 6,
-    good: 8
-  },
-  mpd: {
-    poor: 0.6,
-    good: 0.7
-  }
-};
-
+/**
+ * Service for creating ArcGIS renderers for pavement condition KPIs.
+ * Uses centralized thresholds and configuration from appConfig.ts
+ */
 export default class RendererService {
   /**
    * Creates a class break renderer for a specific KPI and year
@@ -64,10 +20,10 @@ export default class RendererService {
    * @returns ClassBreaksRenderer configured for the KPI
    */
   static createKPIRenderer(kpi: KPIKey, year: number): ClassBreaksRenderer {
-    // Construct the field name based on KPI and year
-    const fieldName = `roads_csv_${kpi}_${year}`;
+    // Construct the field name based on KPI and year using helper function
+    const fieldName = getKPIFieldName(kpi, year);
     
-    // Get thresholds for this KPI
+    // Get thresholds for this KPI from centralized config
     const thresholds = KPI_THRESHOLDS[kpi];
     
     // Create the renderer
@@ -75,23 +31,24 @@ export default class RendererService {
       field: fieldName,
       defaultSymbol: new SimpleLineSymbol({
         color: [128, 128, 128, 0.5], // Gray for null/undefined values
-        width: 2
-      })
+        width: RENDERER_CONFIG.lineWidth || 4
+      }),
+      defaultLabel: 'No Data'
     });
     
     // Add class breaks based on KPI type
     if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
       // Lower values are better
-      this.addStandardBreaks(renderer, thresholds, false);
+      this.addStandardBreaks(renderer, kpi, thresholds, RENDERER_CONFIG.use5ClassRenderers);
     } else if (kpi === 'csc') {
-      // Higher values are better
-      this.addInvertedBreaks(renderer, thresholds);
+      // Higher values are better (inverted)
+      this.addInvertedBreaks(renderer, kpi, thresholds, RENDERER_CONFIG.use5ClassRenderers);
     } else if (kpi === 'psci') {
       // PSCI uses 1-10 scale, higher is better
-      this.addPSCIBreaks(renderer);
+      this.addPSCIBreaks(renderer, RENDERER_CONFIG.use5ClassRenderers);
     } else if (kpi === 'mpd') {
-      // MPD has simple poor/good threshold
-      this.addMPDBreaks(renderer, thresholds);
+      // MPD has simple poor/fair/good threshold
+      this.addMPDBreaks(renderer);
     }
     
     return renderer;
@@ -99,236 +56,411 @@ export default class RendererService {
   
   /**
    * Add standard class breaks (lower values = better condition)
+   * Used for IRI, RUT, and LPV3
    */
   private static addStandardBreaks(
     renderer: ClassBreaksRenderer, 
-    thresholds: any, 
+    kpi: KPIKey,
+    thresholds: typeof KPI_THRESHOLDS[KPIKey],
     use5Classes: boolean = false
   ): void {
-    if (use5Classes && thresholds.veryGood !== undefined) {
-      // 5-class system
+    const lineWidth = RENDERER_CONFIG.lineWidth;
+    
+    if (use5Classes && thresholds.veryGood !== undefined && thresholds.poor !== undefined) {
+      // 5-class system with Very Good through Very Poor
       renderer.addClassBreakInfo({
         minValue: 0,
         maxValue: thresholds.veryGood,
         symbol: new SimpleLineSymbol({
-          color: COLORS.veryGood,
-          width: 4
+          color: RENDERER_CONFIG.colors.fiveClass.veryGood,
+          width: lineWidth
         }),
-        label: 'Very Good'
+        label: `Very Good (< ${thresholds.veryGood})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.veryGood,
         maxValue: thresholds.good,
         symbol: new SimpleLineSymbol({
-          color: COLORS.good,
-          width: 4
+          color: RENDERER_CONFIG.colors.fiveClass.good,
+          width: lineWidth
         }),
-        label: 'Good'
+        label: `Good (${thresholds.veryGood}-${thresholds.good})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.good,
         maxValue: thresholds.fair,
         symbol: new SimpleLineSymbol({
-          color: COLORS.fair,
-          width: 4
+          color: RENDERER_CONFIG.colors.fiveClass.fair,
+          width: lineWidth
         }),
-        label: 'Fair'
+        label: `Fair (${thresholds.good}-${thresholds.fair})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.fair,
         maxValue: thresholds.poor,
         symbol: new SimpleLineSymbol({
-          color: COLORS.poor,
-          width: 4
+          color: RENDERER_CONFIG.colors.fiveClass.poor,
+          width: lineWidth
         }),
-        label: 'Poor'
+        label: `Poor (${thresholds.fair}-${thresholds.poor})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.poor,
         maxValue: 9999999,
         symbol: new SimpleLineSymbol({
-          color: COLORS.veryPoor,
-          width: 4
+          color: RENDERER_CONFIG.colors.fiveClass.veryPoor,
+          width: lineWidth
         }),
-        label: 'Very Poor'
+        label: `Very Poor (> ${thresholds.poor})`
       });
     } else {
-      // 3-class simplified system (Good includes Very Good + Good)
+      // Simplified 3-class system
+      const goodMax = thresholds.good;
+      const fairMax = thresholds.fair;
+      
       renderer.addClassBreakInfo({
         minValue: 0,
-        maxValue: thresholds.good,
+        maxValue: goodMax,
         symbol: new SimpleLineSymbol({
-          color: SIMPLE_COLORS.good,
-          width: 4
+          color: RENDERER_CONFIG.colors.threeClass.good,
+          width: lineWidth
         }),
-        label: 'Good'
+        label: `Good (< ${goodMax})`
       });
       
       renderer.addClassBreakInfo({
-        minValue: thresholds.good,
-        maxValue: thresholds.fair,
+        minValue: goodMax,
+        maxValue: fairMax,
         symbol: new SimpleLineSymbol({
-          color: SIMPLE_COLORS.fair,
-          width: 4
+          color: RENDERER_CONFIG.colors.threeClass.fair,
+          width: lineWidth
         }),
-        label: 'Fair'
+        label: `Fair (${goodMax}-${fairMax})`
       });
       
       renderer.addClassBreakInfo({
-        minValue: thresholds.fair,
+        minValue: fairMax,
         maxValue: 9999999,
         symbol: new SimpleLineSymbol({
-          color: SIMPLE_COLORS.poor,
-          width: 4
+          color: RENDERER_CONFIG.colors.threeClass.poor,
+          width: lineWidth
         }),
-        label: 'Poor'
+        label: `Poor (> ${fairMax})`
       });
     }
   }
   
   /**
    * Add inverted class breaks for CSC (higher values = better condition)
+   * CSC: ≤0.35 = Very Poor, 0.35-0.40 = Poor, 0.40-0.45 = Fair, 0.45-0.50 = Good, >0.50 = Very Good
    */
-  private static addInvertedBreaks(renderer: ClassBreaksRenderer, thresholds: any): void {
-    // For CSC: higher values are better
-    renderer.addClassBreakInfo({
-      minValue: 0,
-      maxValue: thresholds.veryPoor,
-      symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.poor,
-        width: 4
-      }),
-      label: 'Poor'
-    });
+  private static addInvertedBreaks(
+    renderer: ClassBreaksRenderer,
+    kpi: KPIKey,
+    thresholds: typeof KPI_THRESHOLDS[KPIKey],
+    use5Classes: boolean = false
+  ): void {
+    const lineWidth = RENDERER_CONFIG.lineWidth;
     
-    renderer.addClassBreakInfo({
-      minValue: thresholds.veryPoor,
-      maxValue: thresholds.fair,
-      symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.fair,
-        width: 4
-      }),
-      label: 'Fair'
-    });
-    
-    renderer.addClassBreakInfo({
-      minValue: thresholds.fair,
-      maxValue: 1,
-      symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.good,
-        width: 4
-      }),
-      label: 'Good'
-    });
+    if (use5Classes && thresholds.veryPoor !== undefined && thresholds.poor !== undefined && thresholds.good !== undefined) {
+      // 5-class system for CSC
+      renderer.addClassBreakInfo({
+        minValue: 0,
+        maxValue: thresholds.veryPoor,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.veryPoor,
+          width: lineWidth
+        }),
+        label: `Very Poor (≤ ${thresholds.veryPoor})`
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.veryPoor,
+        maxValue: thresholds.poor,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.poor,
+          width: lineWidth
+        }),
+        label: `Poor (${thresholds.veryPoor}-${thresholds.poor})`
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.poor,
+        maxValue: thresholds.fair,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.fair,
+          width: lineWidth
+        }),
+        label: `Fair (${thresholds.poor}-${thresholds.fair})`
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.fair,
+        maxValue: thresholds.good,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.good,
+          width: lineWidth
+        }),
+        label: `Good (${thresholds.fair}-${thresholds.good})`
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.good,
+        maxValue: 1,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.veryGood,
+          width: lineWidth
+        }),
+        label: `Very Good (> ${thresholds.good})`
+      });
+    } else {
+      // 3-class system for CSC
+      const poorMax = thresholds.veryPoor || thresholds.poor!;
+      
+      renderer.addClassBreakInfo({
+        minValue: 0,
+        maxValue: poorMax,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.threeClass.poor,
+          width: lineWidth
+        }),
+        label: `Poor (< ${poorMax})`
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: poorMax,
+        maxValue: thresholds.fair,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.threeClass.fair,
+          width: lineWidth
+        }),
+        label: `Fair (${poorMax}-${thresholds.fair})`
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.fair,
+        maxValue: 1,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.threeClass.good,
+          width: lineWidth
+        }),
+        label: `Good (> ${thresholds.fair})`
+      });
+    }
   }
   
   /**
    * Add PSCI-specific breaks (1-10 scale)
+   * PSCI remedial categories from 2018 report:
+   * - 1-2: Road Reconstruction
+   * - 3-4: Structural Rehabilitation  
+   * - 5-6: Surface Restoration
+   * - 7-8: Restoration of Skid Resistance
+   * - 9-10: Routine Maintenance
+   * * Note: ClassBreaksRenderer treats maxValue as inclusive.
+   * To avoid overlap, we use values like 2.999, 4.999, etc.
    */
-  private static addPSCIBreaks(renderer: ClassBreaksRenderer): void {
-    // PSCI: 1-4 = Poor, 5-6 = Fair, 7-10 = Good
-    renderer.addClassBreakInfo({
-      minValue: 0,
-      maxValue: 4,
-      symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.poor,
-        width: 4
-      }),
-      label: 'Poor (Reconstruction/Structural)'
-    });
+  private static addPSCIBreaks(renderer: ClassBreaksRenderer, use5Classes: boolean = false): void {
+    const lineWidth = RENDERER_CONFIG.lineWidth;
+    const thresholds = KPI_THRESHOLDS.psci;
     
-    renderer.addClassBreakInfo({
-      minValue: 4,
-      maxValue: 6,
-      symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.fair,
-        width: 4
-      }),
-      label: 'Fair (Surface Restoration)'
-    });
-    
-    renderer.addClassBreakInfo({
-      minValue: 6,
-      maxValue: 10,
-      symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.good,
-        width: 4
-      }),
-      label: 'Good (Routine Maintenance)'
-    });
+    if (use5Classes) {
+      // 5-class system matching remedial categories
+      renderer.addClassBreakInfo({
+        minValue: 0,
+        maxValue: thresholds.veryPoor!, // Using value from appConfig
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.veryPoor,
+          width: lineWidth
+        }),
+        label: 'Very Poor (1-2): Reconstruction'
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.veryPoor!,
+        maxValue: thresholds.poor!,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.poor,
+          width: lineWidth
+        }),
+        label: 'Poor (3-4): Structural Rehab'
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.poor!,
+        maxValue: thresholds.fair!,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.fair,
+          width: lineWidth
+        }),
+        label: 'Fair (5-6): Surface Restoration'
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.fair!,
+        maxValue: thresholds.good!,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.good,
+          width: lineWidth
+        }),
+        label: 'Good (7-8): Skid Resistance'
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.good!,
+        maxValue: 10,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.fiveClass.veryGood,
+          width: lineWidth
+        }),
+        label: 'Very Good (9-10): Routine Maint.'
+      });
+    } else {
+      // Simplified 3-class system
+      renderer.addClassBreakInfo({
+        minValue: 0,
+        maxValue: thresholds.poor!,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.threeClass.poor,
+          width: lineWidth
+        }),
+        label: 'Poor (1-4): Reconstruction/Structural'
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.poor!,
+        maxValue: thresholds.fair!,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.threeClass.fair,
+          width: lineWidth
+        }),
+        label: 'Fair (5-6): Surface Restoration'
+      });
+      
+      renderer.addClassBreakInfo({
+        minValue: thresholds.fair!,
+        maxValue: 10,
+        symbol: new SimpleLineSymbol({
+          color: RENDERER_CONFIG.colors.threeClass.good,
+          width: lineWidth
+        }),
+        label: 'Good (7-10): Routine Maintenance'
+      });
+    }
   }
   
   /**
    * Add MPD-specific breaks
+   * MPD (Mean Profile Depth) for skid resistance:
+   * - < 0.6mm: Poor skid resistance
+   * - 0.6-0.7mm: Fair (transitional)
+   * - > 0.7mm: Good skid resistance
    */
-  private static addMPDBreaks(renderer: ClassBreaksRenderer, thresholds: any): void {
-    // MPD: <0.6 = Poor, >0.7 = Good, 0.6-0.7 = Fair
+  private static addMPDBreaks(renderer: ClassBreaksRenderer): void {
+    const colors = RENDERER_CONFIG.use5ClassRenderers ? 
+      RENDERER_CONFIG.colors.fiveClass : 
+      RENDERER_CONFIG.colors.threeClass;
+    const lineWidth = RENDERER_CONFIG.lineWidth;
+    const thresholds = KPI_THRESHOLDS.mpd;
+    
     renderer.addClassBreakInfo({
       minValue: 0,
-      maxValue: thresholds.poor,
+      maxValue: thresholds.poor!,
       symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.poor,
-        width: 4
+        color: colors.poor,
+        width: lineWidth
       }),
-      label: 'Poor Skid Resistance'
+      label: `Poor Skid Resistance (< ${thresholds.poor}mm)`
     });
     
     renderer.addClassBreakInfo({
-      minValue: thresholds.poor,
-      maxValue: thresholds.good,
+      minValue: thresholds.poor!,
+      maxValue: thresholds.good!,
       symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.fair,
-        width: 4
+        color: colors.fair,
+        width: lineWidth
       }),
-      label: 'Fair'
+      label: `Fair (${thresholds.poor}-${thresholds.good}mm)`
     });
     
     renderer.addClassBreakInfo({
-      minValue: thresholds.good,
+      minValue: thresholds.good!,
       maxValue: 9999999,
       symbol: new SimpleLineSymbol({
-        color: SIMPLE_COLORS.good,
-        width: 4
+        color: colors.good,
+        width: lineWidth
       }),
-      label: 'Good Skid Resistance'
+      label: `Good Skid Resistance (≥ ${thresholds.good}mm)`
     });
   }
   
   /**
    * Get the condition class for a value based on KPI type and thresholds
-   * Used for statistics calculations
+   * This method is now a wrapper around the centralized function in appConfig
+   * Kept for backward compatibility
+   * * @deprecated Use getConditionClass from appConfig directly
    */
   static getConditionClass(kpi: KPIKey, value: number): 'good' | 'fair' | 'poor' | null {
-    if (value === null || value === undefined || isNaN(value)) return null;
+    const detailedClass = getConditionClass(kpi, value, false);
     
-    const thresholds = KPI_THRESHOLDS[kpi];
+    if (!detailedClass) return null;
     
-    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
-      // Lower is better
-      if (value < thresholds.good) return 'good';
-      if (value < thresholds.fair) return 'fair';
-      return 'poor';
-    } else if (kpi === 'csc') {
-      // Higher is better
-      if (value >= thresholds.fair) return 'good';
-      if (value >= thresholds.veryPoor) return 'fair';
-      return 'poor';
-    } else if (kpi === 'psci') {
-      // 1-10 scale, higher is better
-      if (value > 6) return 'good';
-      if (value > 4) return 'fair';
-      return 'poor';
-    } else if (kpi === 'mpd') {
-      // MPD thresholds
-      if (value >= thresholds.good) return 'good';
-      if (value >= thresholds.poor) return 'fair';
-      return 'poor';
-    }
+    // Map to simplified 3-class system
+    if (detailedClass === 'veryGood' || detailedClass === 'good') return 'good';
+    if (detailedClass === 'fair') return 'fair';
+    return 'poor';
+  }
+  
+  /**
+   * Creates a simple renderer with a single symbol (no classification)
+   * Useful for highlighting selected features or showing all features uniformly
+   */
+  static createSimpleRenderer(color: number[] = [0, 121, 193, 0.8], width: number = 4): any {
+    return {
+      type: 'simple',
+      symbol: new SimpleLineSymbol({
+        color: color,
+        width: width
+      })
+    };
+  }
+  
+  /**
+   * Creates a unique value renderer for categorical data (e.g., subgroups)
+   * @param field - The field name to use for unique values
+   * @param valueColorMap - Map of field values to colors
+   */
+  static createUniqueValueRenderer(
+    field: string, 
+    valueColorMap: Map<string, number[]>
+  ): any {
+    const uniqueValueInfos: any[] = [];
+    const lineWidth = RENDERER_CONFIG.lineWidth;
     
-    return null;
+    valueColorMap.forEach((color, value) => {
+      uniqueValueInfos.push({
+        value: value,
+        symbol: new SimpleLineSymbol({
+          color: color,
+          width: lineWidth
+        }),
+        label: value
+      });
+    });
+    
+    return {
+      type: 'unique-value',
+      field: field,
+      uniqueValueInfos: uniqueValueInfos,
+      defaultSymbol: new SimpleLineSymbol({
+        color: [128, 128, 128, 0.5],
+        width: lineWidth
+      }),
+      defaultLabel: 'Other'
+    };
   }
 }

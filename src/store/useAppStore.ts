@@ -29,6 +29,7 @@ interface AppState {
   initialExtent: Extent | null;
   error: string | null;
   preSwipeDefinitionExpression: string | null;
+  mapInitialized: boolean; // Add flag to track initialization status
 
   // UI
   siderCollapsed: boolean;
@@ -83,6 +84,7 @@ const useAppStore = create<AppState>()(
         initialExtent: null,
         error: null,
         preSwipeDefinitionExpression: null,
+        mapInitialized: false, // Initialize as false
 
         siderCollapsed: true,
         showFilters: true,
@@ -166,13 +168,55 @@ const useAppStore = create<AppState>()(
         },
 
         initializeMap: async (containerId: string) => {
+          const state = get();
+          
+          // GUARD 1: Check if map is already initialized
+          if (state.mapInitialized && state.mapView) {
+            console.log('Map already initialized, skipping re-initialization');
+            
+            // Just ensure the view container is correct
+            const container = document.getElementById(containerId);
+            if (container && state.mapView.container !== container) {
+              console.log('Updating map container');
+              (state.mapView as any).container = container;
+            }
+            
+            return; // Early return - map already exists
+          }
+          
+          // GUARD 2: Prevent concurrent initialization attempts
+          if (state.loading && state.mapInitialized) {
+            console.log('Map initialization already in progress');
+            return;
+          }
+          
           try {
             set({ loading: true, error: null });
             
+            // Check if container exists
+            const container = document.getElementById(containerId);
+            if (!container) {
+              throw new Error(`Container element with id "${containerId}" not found`);
+            }
+            
+            // GUARD 3: Check if a map view is already attached to this container
+            if ((container as any).__esri_mapview) {
+              console.warn('Container already has a map view attached, cleaning up');
+              const existingView = (container as any).__esri_mapview;
+              if (existingView && existingView.destroy) {
+                existingView.destroy();
+              }
+              delete (container as any).__esri_mapview;
+            }
+            
+            console.log('Initializing new map view...');
             const { view, webmap } = await MapViewService.initializeMapView(
               containerId, 
               CONFIG.webMapId
             );
+            
+            // Store reference on container for future guard checks
+            (container as any).__esri_mapview = view;
             
             const road = webmap.allLayers.find(
               (l: any) => l.title === CONFIG.roadNetworkLayerTitle
@@ -192,19 +236,24 @@ const useAppStore = create<AppState>()(
               roadLayer: road ?? null,
               roadLayerSwipe: roadSwipe ?? null,
               initialExtent: view.extent ?? null,
-              loading: false
+              loading: false,
+              mapInitialized: true, // Mark as initialized
+              error: null
             });
             
             // Apply initial renderer if layer is available
             if (road) {
               get().updateRenderer();
             }
+            
+            console.log('Map initialization completed successfully');
           } catch (e: any) {
             console.error('Map initialization error:', e);
             const errorMsg = e?.message || 'Failed to initialize map';
             set({ 
               error: errorMsg, 
-              loading: false 
+              loading: false,
+              mapInitialized: false // Reset on error
             });
             message.error(errorMsg);
           }
@@ -238,41 +287,36 @@ const useAppStore = create<AppState>()(
           if (validatedFilters.subgroup.length) {
             const subgroupClauses: string[] = [];
             
-            // The filter now contains field names (from the refactored config)
-            // We need to handle the values which are now field names, not numeric codes
             for (const fieldNameOrValue of validatedFilters.subgroup) {
-              // Check if this is a field name (new format) or numeric code (old format)
               let fieldName: string | undefined;
               
-              // First check if it's a string field name from the new format
-              const subgroupOption = CONFIG.filters.subgroup.options?.find(
-                opt => opt.value === fieldNameOrValue || 
-                      (!isNaN(Number(fieldNameOrValue)) && opt.code === Number(fieldNameOrValue))
-              );
+              const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => {
+              if (typeof fieldNameOrValue === 'string') {
+                return opt.value === fieldNameOrValue;
+              } else if (typeof fieldNameOrValue === 'number') {
+                return opt.code === fieldNameOrValue;
+              }
+              return false;
+            });
               
               if (subgroupOption) {
                 fieldName = subgroupOption.value as string;
               } else if (typeof fieldNameOrValue === 'number') {
-                // Fallback for backward compatibility with numeric codes
                 fieldName = SUBGROUP_CODE_TO_FIELD[fieldNameOrValue];
               } else {
-                // Direct field name
                 fieldName = fieldNameOrValue as string;
               }
               
               if (fieldName === 'Rural') {
-                // Rural: all flags must be 0
                 subgroupClauses.push(
                   `(Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND ` +
                   `Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)`
                 );
               } else if (fieldName && fieldName !== 'Rural') {
-                // Other subgroups: check if flag = 1
                 subgroupClauses.push(`${fieldName} = 1`);
               }
             }
             
-            // Use OR between different subgroup selections
             if (subgroupClauses.length > 0) {
               clauses.push(`(${subgroupClauses.join(' OR ')})`);
             }
@@ -285,36 +329,24 @@ const useAppStore = create<AppState>()(
               .join(',');
             clauses.push(`${CONFIG.fields.route} IN (${inVals})`);
           }
-
-          // Year is handled in the renderer and statistics, not in the WHERE clause
-          // The year is part of the field name (e.g., roads_csv_iri_2025)
           
           const where = clauses.length ? clauses.join(' AND ') : '1=1';
           (roadLayer as any).definitionExpression = where;
 
-          // Count active filters for UI feedback
           const filterCount = 
             (validatedFilters.localAuthority.length > 0 ? 1 : 0) +
             (validatedFilters.subgroup.length > 0 ? 1 : 0) +
             (validatedFilters.route.length > 0 ? 1 : 0) +
-            (validatedFilters.year.length > 1 ? 1 : 0); // Only count if not default single year
+            (validatedFilters.year.length > 1 ? 1 : 0);
           
           set({ appliedFiltersCount: filterCount });
 
           try {
-            // Zoom to filtered extent
             await QueryService.zoomToDefinition(state.mapView, roadLayer, where);
-            
-            // Update renderer for the selected year and KPI
             state.updateRenderer();
-            
-            // Show statistics panel
             set({ showStats: true });
-            
-            // Calculate statistics
             await state.calculateStatistics();
             
-            // Provide feedback on filter application
             if (filterCount > 0) {
               message.success(`${filterCount} filter${filterCount > 1 ? 's' : ''} applied`);
             } else {
@@ -324,8 +356,6 @@ const useAppStore = create<AppState>()(
           } catch (error) {
             console.error('Error applying filters:', error);
             message.error('Failed to apply filters completely');
-            
-            // Still try to calculate statistics even if zoom fails
             await state.calculateStatistics();
           }
         },
@@ -334,7 +364,6 @@ const useAppStore = create<AppState>()(
           const state = get();
           const { roadLayer, activeKpi } = state;
           
-          // Validate filters before calculating
           const validatedFilters = state.validateAndFixFilters();
           
           try {
@@ -344,16 +373,13 @@ const useAppStore = create<AppState>()(
               activeKpi
             );
             
-            // Check if we got empty results
             if (stats.totalSegments === 0) {
               message.warning('No road segments match the current filters');
               set({ 
-                currentStats: stats // Still set the empty stats to show zero values
+                currentStats: stats
               });
             } else {
               set({ currentStats: stats });
-              
-              // Log summary for debugging
               console.log(`Statistics calculated: ${stats.totalSegments} segments, ` +
                         `${stats.totalLengthKm} km total length`);
             }
@@ -361,7 +387,6 @@ const useAppStore = create<AppState>()(
             console.error('Error calculating statistics:', error);
             message.error('Failed to calculate statistics');
             
-            // Set empty stats on error
             const emptyStats: SummaryStatistics = {
               totalSegments: 0,
               totalLengthKm: 0,
@@ -392,19 +417,14 @@ const useAppStore = create<AppState>()(
             return;
           }
           
-          // Validate and get the current year
           const validatedFilters = state.validateAndFixFilters();
-          const year = validatedFilters.year[0]; // Always use first year for rendering
+          const year = validatedFilters.year[0];
           
           try {
-            // Create and apply the renderer for the current KPI and year
             const renderer = RendererService.createKPIRenderer(activeKpi, year);
             (roadLayer as any).renderer = renderer;
             
-            // Update swipe layer if it exists
             if (state.roadLayerSwipe) {
-              // The swipe layer might show a different year, handled by SimpleSwipePanel
-              // For now, just ensure it has a renderer
               if (!(state.roadLayerSwipe as any).renderer) {
                 (state.roadLayerSwipe as any).renderer = renderer;
               }
@@ -419,12 +439,15 @@ const useAppStore = create<AppState>()(
       }),
       { 
         name: 'rmo-app',
-        // Don't persist map objects or temporary UI state
+        // IMPORTANT: Exclude all map-related objects and temporary UI state from persistence
+        // Only persist user preferences and selections
         partialize: (state) => ({
           themeMode: state.themeMode,
           activeKpi: state.activeKpi,
           currentFilters: state.currentFilters,
-          siderCollapsed: state.siderCollapsed
+          siderCollapsed: state.siderCollapsed,
+          // Explicitly exclude: mapView, webmap, roadLayer, roadLayerSwipe, 
+          // initialExtent, mapInitialized, loading, error
         })
       }
     )

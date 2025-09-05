@@ -8,13 +8,29 @@ const EnhancedFilterPanel: React.FC = () => {
   const { roadLayer, currentFilters, setFilters, applyFilters, clearAllFilters } = useAppStore();
   const [laOptions, setLaOptions] = useState<string[]>([]);
   const [routeOptions, setRouteOptions] = useState<string[]>([]);
-  const [yearOptions, setYearOptions] = useState<string[]>(CONFIG.filters.year.options?.map(o => String(o.value)) || []);
+  
+  // FIX: Initialize with numbers from CONFIG, not strings
+  const [yearOptions, setYearOptions] = useState<number[]>(
+    CONFIG.filters.year.options?.map(o => o.value) || []
+  );
 
   useEffect(() => {
+    // Load unique values for LA and Route
     QueryService.getUniqueValues(roadLayer, CONFIG.fields.la).then(setLaOptions);
     QueryService.getUniqueValues(roadLayer, CONFIG.fields.route).then(setRouteOptions);
+    
+    // FIX: Convert year values to numbers when loading from QueryService
     QueryService.getUniqueValues(roadLayer, CONFIG.fields.year).then((vals) => {
-      if (vals.length) setYearOptions(vals);
+      if (vals.length) {
+        // Convert string values to numbers and filter out any invalid values
+        const numericYears = vals
+          .map(v => parseInt(v, 10))
+          .filter(v => !isNaN(v) && v > 2000 && v < 2100); // Basic validation for reasonable years
+        
+        if (numericYears.length > 0) {
+          setYearOptions(numericYears);
+        }
+      }
     });
   }, [roadLayer]);
 
@@ -26,10 +42,14 @@ const EnhancedFilterPanel: React.FC = () => {
   }, [currentFilters]);
 
   return (
-    <Card size="small" title={<Space>Filters <Badge count={counter} /></Space>} actions={[
-      <Button key="clear" onClick={clearAllFilters}>Clear All</Button>,
-      <Button key="apply" type="primary" onClick={applyFilters}>Apply Filters</Button>
-    ]}>
+    <Card 
+      size="small" 
+      title={<Space>Filters <Badge count={counter} /></Space>} 
+      actions={[
+        <Button key="clear" onClick={clearAllFilters}>Clear All</Button>,
+        <Button key="apply" type="primary" onClick={applyFilters}>Apply Filters</Button>
+      ]}
+    >
       <Space direction="vertical" style={{ width: '100%' }}>
         <div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Local Authority</div>
@@ -49,7 +69,10 @@ const EnhancedFilterPanel: React.FC = () => {
             mode="multiple"
             style={{ width: '100%' }}
             placeholder="Select Subgroup"
-            options={CONFIG.filters.subgroup.options?.map(o => ({ label: o.label, value: o.value }))}
+            options={CONFIG.filters.subgroup.options?.map(o => ({ 
+              label: o.label, 
+              value: o.value 
+            }))}
             value={currentFilters.subgroup}
             onChange={(vals) => setFilters({ subgroup: vals })}
           />
@@ -74,9 +97,20 @@ const EnhancedFilterPanel: React.FC = () => {
             mode="multiple"
             style={{ width: '100%' }}
             placeholder="Select Survey Year"
-            options={yearOptions.map(v => ({ label: v, value: Number(v) }))}
+            // FIX: Ensure year options are properly formatted with numeric values
+            options={yearOptions.map(v => ({ 
+              label: String(v), // Display as string
+              value: v          // Store as number
+            }))}
             value={currentFilters.year}
-            onChange={(vals) => setFilters({ year: vals })}
+            // FIX: Ensure onChange converts values to numbers
+            onChange={(vals) => {
+              // vals should already be numbers from the options, but ensure they are
+              const numericYears = vals.map(v => 
+                typeof v === 'number' ? v : parseInt(v as any, 10)
+              );
+              setFilters({ year: numericYears });
+            }}
           />
         </div>
       </Space>

@@ -26,7 +26,19 @@ const App: React.FC = () => {
   const { styles } = usePanelStyles();
   const { token } = theme.useToken();
 
-  useEffect(() => { initializeMap('viewDiv'); }, [initializeMap]);
+  // FIX: Use empty dependency array to ensure map is initialized only once
+  // This prevents re-initialization when store functions change
+  useEffect(() => {
+    // Initialize map only once when component mounts
+    initializeMap('viewDiv');
+    
+    // Cleanup function (optional but good practice)
+    return () => {
+      // The store's initializeMap already handles cleanup via guards,
+      // but we can add explicit cleanup here if needed
+      console.log('App component unmounting');
+    };
+  }, []); // Empty dependency array - runs only once on mount
 
   const headerControls = (
     <div className={styles.headerRight}>
@@ -43,30 +55,67 @@ const App: React.FC = () => {
     </div>
   );
 
-  const content = (
+  // ENSURE: Only one map container div exists
+  // The map content is wrapped in a single container with proper structure
+  const mapContent = (
     <div style={{ position:'relative', width:'100%', height:'100%' }}>
-      <div id="viewDiv" />
+      {/* Single map container - no duplicates */}
+      <div id="viewDiv" style={{ width: '100%', height: '100%' }} />
+      
+      {/* Map widgets overlay */}
       <MapWidgets />
-      {showFilters && <div className={styles.filterPanel}><EnhancedFilterPanel /></div>}
-      {showStats && <div className={styles.statsPanel}><EnhancedStatsPanel /></div>}
-      {showChart && <div className={styles.chartPanel}><EnhancedChartPanel /></div>}
-      {showSwipe && <div className={styles.swipePanel}><SimpleSwipePanel /></div>}
+      
+      {/* Floating panels positioned over the map */}
+      {showFilters && (
+        <div className={styles.filterPanel}>
+          <EnhancedFilterPanel />
+        </div>
+      )}
+      {showStats && (
+        <div className={styles.statsPanel}>
+          <EnhancedStatsPanel />
+        </div>
+      )}
+      {showChart && (
+        <div className={styles.chartPanel}>
+          <EnhancedChartPanel />
+        </div>
+      )}
+      {showSwipe && (
+        <div className={styles.swipePanel}>
+          <SimpleSwipePanel />
+        </div>
+      )}
     </div>
   );
 
   return withTheme(themeMode, (
-    <Layout style={{ height: '100vh' }}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider collapsible defaultCollapsed width={220} theme="dark">
         <div style={{ color: '#fff', padding: 12, fontWeight: 600 }}>RMO Logo</div>
-        <div style={{ color: '#bbb', padding: 12 }}>Overview Page</div>
-        <div style={{ color: '#bbb', padding: '0 12px 12px' }}>Condition Summary Page</div>
+        <div style={{ color: '#bbb', padding: 12, cursor: 'pointer' }}>Overview Page</div>
+        <div style={{ color: '#bbb', padding: '0 12px 12px', cursor: 'pointer' }}>Condition Summary Page</div>
       </Sider>
-      <Layout>
-        <Header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background: token.colorBgContainer }}>
+      <Layout style={{ height: '100%', overflow: 'hidden' }}>
+        <Header style={{ 
+          display:'flex', 
+          alignItems:'center', 
+          justifyContent:'space-between', 
+          background: token.colorBgContainer,
+          padding: '0 16px',
+          flexShrink: 0
+        }}>
           <Title level={4} style={{ margin: 0 }}>{CONFIG.title}</Title>
           {headerControls}
         </Header>
-        <Content>{content}</Content>
+        <Content style={{ 
+          flex: 1, 
+          overflow: 'hidden',
+          position: 'relative'
+        }}>
+          {/* Single map content container */}
+          {mapContent}
+        </Content>
       </Layout>
     </Layout>
   ));

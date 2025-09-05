@@ -4,6 +4,7 @@ import {
   KPIKey, 
   KPI_THRESHOLDS, 
   RENDERER_CONFIG, 
+  CONFIG,
   getKPIFieldName,
   getConditionClass 
 } from '@/config/appConfig';
@@ -11,15 +12,61 @@ import {
 /**
  * Service for creating ArcGIS renderers for pavement condition KPIs.
  * Uses centralized thresholds and configuration from appConfig.ts
+ * Implements caching for performance optimization.
  */
 export default class RendererService {
   /**
+   * Private cache for storing pre-computed renderers
+   * Key format: "kpi_year" (e.g., "iri_2025")
+   */
+  private static rendererCache: Map<string, ClassBreaksRenderer> = new Map();
+  
+  /**
+   * Track whether renderers have been preloaded
+   */
+  private static isPreloaded: boolean = false;
+  
+  /**
+   * Generate cache key for a KPI/year combination
+   */
+  private static getCacheKey(kpi: KPIKey, year: number): string {
+    return `${kpi}_${year}`;
+  }
+  
+  /**
+   * Get a cached renderer if it exists
+   * @param kpi - The KPI type
+   * @param year - The survey year
+   * @returns Cached renderer or null if not found
+   */
+  static getCachedRenderer(kpi: KPIKey, year: number): ClassBreaksRenderer | null {
+    const key = this.getCacheKey(kpi, year);
+    const cached = this.rendererCache.get(key);
+    
+    if (cached) {
+      console.log(`Using cached renderer for ${kpi}/${year}`);
+      return cached;
+    }
+    
+    return null;
+  }
+  
+  /**
    * Creates a class break renderer for a specific KPI and year
+   * Now checks cache first before creating new renderer
    * @param kpi - The KPI type (iri, rut, psci, etc.)
    * @param year - The survey year (2011, 2018, 2025)
    * @returns ClassBreaksRenderer configured for the KPI
    */
   static createKPIRenderer(kpi: KPIKey, year: number): ClassBreaksRenderer {
+    // Check cache first
+    const cached = this.getCachedRenderer(kpi, year);
+    if (cached) {
+      return cached;
+    }
+    
+    console.log(`Creating new renderer for ${kpi}/${year}`);
+    
     // Construct the field name based on KPI and year using helper function
     const fieldName = getKPIFieldName(kpi, year);
     
@@ -51,7 +98,75 @@ export default class RendererService {
       this.addMPDBreaks(renderer);
     }
     
+    // Cache the renderer before returning
+    const key = this.getCacheKey(kpi, year);
+    this.rendererCache.set(key, renderer);
+    
     return renderer;
+  }
+  
+  /**
+   * Preload all possible renderer combinations at startup
+   * This creates all 18 renderers (6 KPIs × 3 years) in advance
+   * @returns Promise that resolves when all renderers are loaded
+   */
+  static async preloadAllRenderers(): Promise<void> {
+    if (this.isPreloaded) {
+      console.log('Renderers already preloaded, skipping');
+      return;
+    }
+    
+    console.log('Preloading all renderers...');
+    const startTime = performance.now();
+    
+    // Get all valid KPIs and years
+    const kpis: KPIKey[] = ['iri', 'rut', 'psci', 'csc', 'mpd', 'lpv3'];
+    const years = CONFIG.filters.year.options?.map(o => o.value) || [2011, 2018, 2025];
+    
+    let count = 0;
+    const total = kpis.length * years.length;
+    
+    // Create all combinations
+    for (const kpi of kpis) {
+      for (const year of years) {
+        // This will create and cache each renderer
+        this.createKPIRenderer(kpi, year);
+        count++;
+        
+        // Yield to browser to prevent blocking
+        if (count % 6 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+    }
+    
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    
+    console.log(`Preloaded ${count} renderers in ${duration}ms`);
+    console.log(`Cache size: ${this.rendererCache.size} renderers`);
+    
+    this.isPreloaded = true;
+  }
+  
+  /**
+   * Clear the renderer cache (useful for testing or memory management)
+   */
+  static clearCache(): void {
+    console.log(`Clearing renderer cache (${this.rendererCache.size} items)`);
+    this.rendererCache.clear();
+    this.isPreloaded = false;
+  }
+  
+  /**
+   * Get cache statistics (for debugging/monitoring)
+   */
+  static getCacheStats(): { size: number; keys: string[]; isPreloaded: boolean } {
+    return {
+      size: this.rendererCache.size,
+      keys: Array.from(this.rendererCache.keys()),
+      isPreloaded: this.isPreloaded
+    };
   }
   
   /**

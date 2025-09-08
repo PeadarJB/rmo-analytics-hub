@@ -1,25 +1,25 @@
 import { createStyles } from 'antd-style';
-
+const PANEL_WIDTH = 500;
 export const usePanelStyles = createStyles(({ token }) => ({
   filterPanel: {
     position: 'absolute' as const,
-    top: 88,
+    top: 18,
     right: 16,
-    width: 420,
+    width: PANEL_WIDTH,  // Use shared constant
     zIndex: 9
   },
   chartPanel: {
     position: 'absolute' as const,
-    top: 88,
+    top: 18,
     right: 16,
-    width: 520,
+    width: PANEL_WIDTH,  // Changed from 520 to shared constant
     zIndex: 9
   },
   statsPanel: {
     position: 'absolute' as const,
     bottom: 16,
     left: 16,
-    width: 420,
+    width: PANEL_WIDTH,
     zIndex: 9
   },
   swipePanel: {
@@ -27,6 +27,16 @@ export const usePanelStyles = createStyles(({ token }) => ({
     bottom: 16,
     right: 16,
     width: 380,
+    zIndex: 9
+  },
+  panelContainer: {  // ADD THIS NEW STYLE
+    position: 'absolute' as const,
+    top: 18,
+    right: 16,
+    width: PANEL_WIDTH,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
     zIndex: 9
   },
   headerRight: {

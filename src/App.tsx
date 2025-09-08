@@ -65,25 +65,29 @@ const App: React.FC = () => {
       {/* Map widgets overlay */}
       <MapWidgets />
       
-      {/* Floating panels positioned over the map */}
-      {showFilters && (
-        <div className={styles.filterPanel}>
+      {/* Wrap filter and chart in shared container when both visible */}
+      {(showFilters && showChart) ? (
+        <div className={styles.panelContainer}>
           <EnhancedFilterPanel />
+          <EnhancedChartPanel />
         </div>
+      ) : (
+        <>
+          {showFilters && (
+            <div className={styles.filterPanel}>
+              <EnhancedFilterPanel />
+            </div>
+          )}
+          {showChart && (
+            <div className={styles.chartPanel}>
+              <EnhancedChartPanel />
+            </div>
+          )}
+        </>
       )}
       {showStats && (
         <div className={styles.statsPanel}>
           <EnhancedStatsPanel />
-        </div>
-      )}
-      {showChart && (
-        <div className={styles.chartPanel}>
-          <EnhancedChartPanel />
-        </div>
-      )}
-      {showSwipe && (
-        <div className={styles.swipePanel}>
-          <SimpleSwipePanel />
         </div>
       )}
     </div>

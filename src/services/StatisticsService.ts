@@ -28,16 +28,39 @@ export default class StatisticsService {
       return this.getPlaceholderStats(activeKpi);
     }
 
+    // --- Task 7 (part 1): validate year early ---
+    {
+      // Use the first selected year or default
+      const year = filters.year.length > 0 ? filters.year[0] : CONFIG.defaultYears[0];
+
+      // Validate year is numeric
+      if (typeof year !== 'number') {
+        console.error(`[StatisticsService] Year must be a number, received: ${typeof year}`, year);
+        return this.getEmptyStats(activeKpi);
+      }
+      console.log(`[StatisticsService] Computing stats for ${activeKpi} in year ${year}`);
+    }
+
+    // --- Task 7 (part 2): replace try-catch block with enhanced logic ---
     try {
       // Use the first selected year or default
       const year = filters.year.length > 0 ? filters.year[0] : CONFIG.defaultYears[0];
+      
+      // Validate year is numeric
+      if (typeof year !== 'number') {
+        console.error(`[StatisticsService] Year must be a number, received: ${typeof year}`, year);
+        return this.getEmptyStats(activeKpi);
+      }
+      console.log(`[StatisticsService] Computing stats for ${activeKpi} in year ${year}`);
+      
       const kpiField = getKPIFieldName(activeKpi, year);
       const lengthField = CONFIG.fields.lengthKm;
       
       // Build where clause based on current definition expression
-      // Add NOT NULL filter to exclude missing KPI values
       const baseWhere = (layer as any).definitionExpression || '1=1';
       const whereClause = `(${baseWhere}) AND ${kpiField} IS NOT NULL`;
+      
+      console.log(`[StatisticsService] Query where clause: ${whereClause}`);
       
       // Execute optimized query for both statistics and condition counts
       const results = await this.executeOptimizedQuery(
@@ -49,12 +72,16 @@ export default class StatisticsService {
       );
       
       if (!results) {
+        console.warn('[StatisticsService] Query returned no results');
         return this.getEmptyStats(activeKpi);
       }
+      
+      console.log(`[StatisticsService] Query results:`, results);
       
       // Convert length from meters to kilometers
       const totalLengthKm = (results.totalLength || 0) / 1000;
       
+      // Rest of the existing calculation logic...
       // Calculate percentages
       const total = results.goodCount + results.fairCount + results.poorCount;
       const goodPct = total > 0 ? (results.goodCount / total) * 100 : 0;
@@ -80,7 +107,6 @@ export default class StatisticsService {
         metrics: [kpiStats],
         lastUpdated: new Date()
       };
-      
     } catch (error) {
       console.error('Error computing statistics:', error);
       return this.getPlaceholderStats(activeKpi);
@@ -174,7 +200,9 @@ export default class StatisticsService {
         poorCount: Math.round(stats.poor_count || 0)
       };
     } catch (error) {
+      // --- Task 7 (part 3): enhanced error handling and detailed logging ---
       console.error('Error executing optimized query:', error);
+      console.log('Query details:', { whereClause, kpiField, activeKpi });
       
       // Fallback to separate queries if CASE expressions are not supported
       return this.executeFallbackQueries(layer, whereClause, kpiField, lengthField, activeKpi);

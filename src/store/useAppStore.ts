@@ -353,9 +353,11 @@ const useAppStore = create<AppState>()(
           console.log('[ApplyFilters] Using validated filters with years:', validatedFilters.year);
           
           if (!roadLayer) {
-            message.warning('Road layer not loaded yet. Using placeholder data.');
-            set({ showStats: true });
-            await state.calculateStatistics();
+            message.error('Road layer is not loaded yet. Please wait a moment and try again.');
+            set({ 
+              currentStats: null,
+              showStats: false 
+            });
             return;
           }
           
@@ -449,6 +451,11 @@ const useAppStore = create<AppState>()(
         calculateStatistics: async () => {
           const state = get();
           const { roadLayer, activeKpi } = state;
+
+          if (!roadLayer) {
+            console.warn('[Statistics] Cannot calculate - road layer not loaded');
+            return;
+          }
           
           // (3) Validate and guard before stats
           const validatedFilters = state.validateAndFixFilters();

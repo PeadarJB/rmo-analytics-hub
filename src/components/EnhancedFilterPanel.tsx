@@ -71,7 +71,7 @@ const EnhancedFilterPanel: React.FC = () => {
             placeholder="Select Subgroup"
             options={CONFIG.filters.subgroup.options?.map(o => ({ 
               label: o.label, 
-              value: o.value 
+              value: o.code   // CHANGED from o.value → o.code
             }))}
             value={currentFilters.subgroup}
             onChange={(vals) => setFilters({ subgroup: vals })}

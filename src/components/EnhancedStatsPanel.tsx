@@ -1,10 +1,11 @@
-import React from 'react';
-import { Card, Statistic, Row, Col, Divider, Tag, Space, Segmented } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Card, Statistic, Row, Col, Divider, Tag, Space, Segmented, Spin, Alert } from 'antd';
 import useAppStore from '@/store/useAppStore';
 import { CONFIG, KPI_LABELS } from '@/config/appConfig';
 
 const EnhancedStatsPanel: React.FC = () => {
-  const { currentStats, currentFilters, setFilters, activeKpi } = useAppStore();
+  const { currentStats, currentFilters, setFilters, activeKpi, loading } = useAppStore();
+  const [isCalculating, setIsCalculating] = useState(false);
 
   const yearOptions = CONFIG.filters.year.options.map(o => ({
     label: o.label,
@@ -14,9 +15,26 @@ const EnhancedStatsPanel: React.FC = () => {
   const onYearChange = (newYear: number) => {
     setFilters({ year: [newYear] });
   };
-  
+
+  useEffect(() => {
+    setIsCalculating(true);
+    const timer = setTimeout(() => setIsCalculating(false), 500);
+    return () => clearTimeout(timer);
+  }, [currentFilters, activeKpi]);
+
   // The first year in the array is the one we display stats for
   const selectedYear = currentFilters.year.length > 0 ? currentFilters.year[0] : null;
+
+  if (isCalculating) {
+    return (
+      <Card size="small" title="Summary Statistics">
+        <div style={{ textAlign: 'center', padding: '20px' }}>
+          <Spin size="large" />
+          <div style={{ marginTop: '12px' }}>Calculating statistics...</div>
+        </div>
+      </Card>
+    );
+  }
 
   if (!currentStats || currentStats.totalSegments === 0 || !selectedYear) {
     return (
@@ -29,9 +47,13 @@ const EnhancedStatsPanel: React.FC = () => {
             onChange={(v) => onYearChange(Number(v))}
             block
           />
-          <div style={{ marginTop: '12px', textAlign: 'center' }}>
-            No data to display. Please apply filters to see summary statistics.
-          </div>
+          <Alert
+            message="No Data Available"
+            description="No road segments match your current filter selection. Please adjust your filters to see summary statistics."
+            type="info"
+            showIcon
+            style={{ marginTop: '12px' }}
+          />
         </Space>
       </Card>
     );

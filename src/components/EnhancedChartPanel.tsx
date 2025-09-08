@@ -8,8 +8,8 @@ import QueryService from '@/services/QueryService';
 // Define the grouping options for the chart
 const groupByOptions = [
   { label: 'Local Authority', value: CONFIG.fields.la },
-  { label: 'Route', value: CONFIG.fields.route },
-  { label: 'Subgroup', value: 'subgroup' }
+  { label: 'Route', value: CONFIG.fields.route }
+  // Subgroup removed - requires special query handling (boolean fields)
 ];
 
 const EnhancedChartPanel: React.FC = () => {
@@ -30,7 +30,7 @@ const EnhancedChartPanel: React.FC = () => {
       setError(null);
       
       const year = currentFilters.year.length > 0 ? currentFilters.year[0] : CONFIG.defaultYears[0];
-      const kpiField = getKPIFieldName(activeKpi, year);
+      const kpiField = getKPIFieldName(activeKpi as KPIKey, year);
       
       // The WHERE clause is defined on the feature layer
       const whereClause = (roadLayer as any)?.definitionExpression || '1=1';
@@ -77,10 +77,12 @@ const EnhancedChartPanel: React.FC = () => {
         data: values,
         backgroundColor: token.colorPrimary,
         borderRadius: 4,
+        barPercentage: 1.0
       }]
     };
 
-    const options = {
+    const options: any = {
+      indexAxis: 'y', // ADD THIS LINE - makes bars horizontal
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
@@ -91,17 +93,17 @@ const EnhancedChartPanel: React.FC = () => {
         },
       },
       scales: {
-        y: {
+        y: {  // SWAP x and y axis configs
+          title: {
+            display: true,
+            text: groupByOptions.find(o => o.value === groupBy)?.label || groupBy
+          }
+        },
+        x: {  // SWAP x and y axis configs
           beginAtZero: true,
           title: {
             display: true,
             text: `Average Value`
-          }
-        },
-        x: {
-          title: {
-            display: true,
-            text: groupByOptions.find(o => o.value === groupBy)?.label || groupBy
           }
         }
       }
@@ -147,16 +149,17 @@ const EnhancedChartPanel: React.FC = () => {
       );
     }
     
-    return <canvas ref={chartRef} height={220} />;
+    return <canvas ref={chartRef} height={700} />; // increased height
   };
 
   return (
     <Card 
       size="small" 
       title="Charts"
+      style={{ minHeight: '500px' }}  // ADD THIS
       extra={
         <Select
-          style={{ width: 140 }}
+          style={{ width: 180 }}
           options={groupByOptions}
           value={groupBy}
           onChange={(v) => setGroupBy(v)}

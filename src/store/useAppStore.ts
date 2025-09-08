@@ -139,33 +139,35 @@ const useAppStore = create<AppState>()(
           message.info('Filters cleared. Showing data for ' + CONFIG.defaultYears[0]);
         },
 
-        validateAndFixFilters: () => {
-          const filters = get().currentFilters;
-          let modified = false;
-          
-          // Ensure at least one year is selected
-          if (!filters.year || filters.year.length === 0) {
-            filters.year = [CONFIG.defaultYears[0]];
-            modified = true;
-            message.warning(`No year selected. Defaulting to ${CONFIG.defaultYears[0]}.`);
-          }
-          
-          // Validate year values are valid options
-          const validYears = (CONFIG.filters.year.options?.map(o => o.value) || CONFIG.defaultYears) as number[];
-          filters.year = filters.year.filter(y => validYears.includes(y));
-          
-          if (filters.year.length === 0) {
-            filters.year = [CONFIG.defaultYears[0]];
-            modified = true;
-            message.warning('Invalid year selection. Defaulting to ' + CONFIG.defaultYears[0]);
-          }
-          
-          if (modified) {
-            set({ currentFilters: filters });
-          }
-          
-          return filters;
-        },
+        validateAndFixFilters: (filters: Partial<FilterState>): Partial<FilterState> => {
+  if (filters.year && Array.isArray(filters.year)) {
+    const originalYears = [...filters.year];
+    let cleanYears: (number | null)[] = originalYears.map(y => {
+      if (typeof y === 'string') {
+        const numYear = parseInt(y, 10);
+        if (!isNaN(numYear)) {
+          console.warn(`[Data Validation] Coerced year value from string "${y}" to number ${numYear}.`);
+          return numYear;
+        }
+        console.warn(`[Data Validation] Invalid year string "${y}" detected and removed.`);
+        return null; // Mark for removal if parsing fails
+      }
+      return y;
+    });
+
+    // Filter out any null values that resulted from failed parsing
+    let validYears = cleanYears.filter(y => y !== null) as number[];
+
+    // If the filter resulted in an empty array, default to a valid year
+    if (validYears.length === 0) {
+      const defaultYear = 2025; // Default from available survey years [cite: 204]
+      console.warn(`[Data Validation] Year filter was empty or contained only invalid years. Resetting to default: ${defaultYear}.`);
+      validYears = [defaultYear];
+    }
+    filters.year = validYears;
+  }
+  return filters;
+},
 
         initializeMap: async (containerId: string) => {
           const state = get();

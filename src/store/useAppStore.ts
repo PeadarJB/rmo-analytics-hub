@@ -116,9 +116,25 @@ const useAppStore = create<AppState>()(
         setFilters: (f) => {
           const currentFilters = get().currentFilters;
           const newFilters = { ...currentFilters, ...f };
-          
+
+          // Type-check years immediately when set
+          if (newFilters.year && Array.isArray(newFilters.year)) {
+            newFilters.year = newFilters.year
+              .map(y => {
+                if (typeof y === 'string') {
+                  const parsed = parseInt(y, 10);
+                  if (!isNaN(parsed)) {
+                    console.warn(`[SetFilters] Coerced year from string to number: "${y}" → ${parsed}`);
+                    return parsed;
+                  }
+                }
+                return y;
+              })
+              .filter(y => typeof y === 'number' && y >= 2000 && y <= 2030);
+          }
+
           // Validate year selection immediately when filters change
-          if (newFilters.year.length === 0) {
+          if (!newFilters.year || newFilters.year.length === 0) {
             // Don't allow empty year selection
             message.warning('At least one survey year must be selected. Defaulting to most recent year.');
             newFilters.year = [CONFIG.defaultYears[0]];
@@ -139,35 +155,52 @@ const useAppStore = create<AppState>()(
           message.info('Filters cleared. Showing data for ' + CONFIG.defaultYears[0]);
         },
 
-        validateAndFixFilters: (filters: Partial<FilterState>): Partial<FilterState> => {
-  if (filters.year && Array.isArray(filters.year)) {
-    const originalYears = [...filters.year];
-    let cleanYears: (number | null)[] = originalYears.map(y => {
-      if (typeof y === 'string') {
-        const numYear = parseInt(y, 10);
-        if (!isNaN(numYear)) {
-          console.warn(`[Data Validation] Coerced year value from string "${y}" to number ${numYear}.`);
-          return numYear;
-        }
-        console.warn(`[Data Validation] Invalid year string "${y}" detected and removed.`);
-        return null; // Mark for removal if parsing fails
-      }
-      return y;
-    });
-
-    // Filter out any null values that resulted from failed parsing
-    let validYears = cleanYears.filter(y => y !== null) as number[];
-
-    // If the filter resulted in an empty array, default to a valid year
-    if (validYears.length === 0) {
-      const defaultYear = 2025; // Default from available survey years [cite: 204]
-      console.warn(`[Data Validation] Year filter was empty or contained only invalid years. Resetting to default: ${defaultYear}.`);
-      validYears = [defaultYear];
-    }
-    filters.year = validYears;
-  }
-  return filters;
-},
+        // (1) Enhanced validator replacing the previous implementation
+        validateAndFixFilters: (): FilterState => {
+          const state = get();
+          const currentFilters = { ...state.currentFilters };
+          
+          // Ensure year array exists and contains only numbers
+          if (!currentFilters.year || !Array.isArray(currentFilters.year)) {
+            console.warn('[Data Validation] Year filter missing or invalid, resetting to default');
+            currentFilters.year = [CONFIG.defaultYears[0]];
+          } else {
+            // Convert all year values to numbers and filter out invalid ones
+            const validatedYears = currentFilters.year
+              .map(y => {
+                if (typeof y === 'string') {
+                  const numYear = parseInt(y, 10);
+                  if (!isNaN(numYear) && numYear >= 2000 && numYear <= 2030) {
+                    console.warn(`[Data Validation] Converted year from string "${y}" to number ${numYear}`);
+                    return numYear;
+                  }
+                  console.warn(`[Data Validation] Invalid year value "${y}" removed from filter`);
+                  return null;
+                }
+                if (typeof y === 'number' && y >= 2000 && y <= 2030) {
+                  return y;
+                }
+                console.warn(`[Data Validation] Invalid year value ${y} removed from filter`);
+                return null;
+              })
+              .filter((y): y is number => y !== null);
+            
+            // Ensure at least one valid year remains
+            if (validatedYears.length === 0) {
+              console.warn('[Data Validation] No valid years after validation, using default');
+              currentFilters.year = [CONFIG.defaultYears[0]];
+            } else {
+              currentFilters.year = validatedYears;
+            }
+          }
+          
+          // Log the final validated years for debugging
+          console.log('[Data Validation] Final year filter:', currentFilters.year);
+          
+          // Update state with validated filters
+          set({ currentFilters });
+          return currentFilters;
+        },
 
         initializeMap: async (containerId: string) => {
           const state = get();
@@ -265,8 +298,9 @@ const useAppStore = create<AppState>()(
           const state = get();
           const { roadLayer } = state;
           
-          // Validate and fix filters before applying
+          // (2) Validate and log filters before applying
           const validatedFilters = state.validateAndFixFilters();
+          console.log('[ApplyFilters] Using validated filters with years:', validatedFilters.year);
           
           if (!roadLayer) {
             message.warning('Road layer not loaded yet. Using placeholder data.');
@@ -366,7 +400,12 @@ const useAppStore = create<AppState>()(
           const state = get();
           const { roadLayer, activeKpi } = state;
           
+          // (3) Validate and guard before stats
           const validatedFilters = state.validateAndFixFilters();
+          if (!validatedFilters.year.length || validatedFilters.year.some(y => typeof y !== 'number')) {
+            console.error('[Statistics] Year validation failed, cannot calculate statistics');
+            return;
+          }
           
           try {
             const stats = await StatisticsService.computeSummary(

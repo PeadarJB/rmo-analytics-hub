@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Layout, Typography, Switch, Space, Segmented, theme, Button } from 'antd';
+import { Layout, Typography, Switch, Segmented, theme } from 'antd';
 import useAppStore from '@/store/useAppStore';
 import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
@@ -7,7 +7,7 @@ import MapWidgets from '@/components/MapWidgets';
 import EnhancedFilterPanel from '@/components/EnhancedFilterPanel';
 import EnhancedStatsPanel from '@/components/EnhancedStatsPanel';
 import EnhancedChartPanel from '@/components/EnhancedChartPanel';
-import SimpleSwipePanel from '@/components/SimpleSwipePanel';
+import ConditionSummaryPage from '@/pages/ConditionSummaryPage';
 import { CONFIG, KPI_LABELS, type KPIKey } from '@/config/appConfig';
 
 const { Header, Sider, Content } = Layout;
@@ -19,26 +19,24 @@ const App: React.FC = () => {
     showFilters, setShowFilters,
     showStats, setShowStats,
     showChart, setShowChart,
-    showSwipe, setShowSwipe,
-    activeKpi, setActiveKpi
+    activeKpi, setActiveKpi,
+    currentPage, setCurrentPage,
   } = useAppStore();
 
   const { styles } = usePanelStyles();
   const { token } = theme.useToken();
 
-  // FIX: Use empty dependency array to ensure map is initialized only once
-  // This prevents re-initialization when store functions change
+  // Guarded map init: only for Overview page, and only if container has no children
   useEffect(() => {
-    // Initialize map only once when component mounts
-    initializeMap('viewDiv');
-    
-    // Cleanup function (optional but good practice)
+    if (currentPage !== 'overview') return;
+    const container = document.getElementById('viewDiv');
+    if (container && !container.hasChildNodes()) {
+      initializeMap('viewDiv');
+    }
     return () => {
-      // The store's initializeMap already handles cleanup via guards,
-      // but we can add explicit cleanup here if needed
-      console.log('App component unmounting');
+      // No-op: store handles cleanup if needed
     };
-  }, []); // Empty dependency array - runs only once on mount
+  }, [currentPage, initializeMap]);
 
   const headerControls = (
     <div className={styles.headerRight}>
@@ -50,22 +48,21 @@ const App: React.FC = () => {
       <Switch checked={showFilters} onChange={setShowFilters} checkedChildren="Filter" unCheckedChildren="Filter" />
       <Switch checked={showStats} onChange={setShowStats} checkedChildren="Stats" unCheckedChildren="Stats" />
       <Switch checked={showChart} onChange={setShowChart} checkedChildren="Chart" unCheckedChildren="Chart" />
-      <Switch checked={showSwipe} onChange={setShowSwipe} checkedChildren="Swipe" unCheckedChildren="Swipe" />
-      <Switch checked={themeMode==='dark'} onChange={(b)=>setThemeMode(b?'dark':'light')} checkedChildren="Dark" unCheckedChildren="Light" />
+      <Switch
+        checked={themeMode === 'dark'}
+        onChange={(b) => setThemeMode(b ? 'dark' : 'light')}
+        checkedChildren="Dark"
+        unCheckedChildren="Light"
+      />
     </div>
   );
 
-  // ENSURE: Only one map container div exists
-  // The map content is wrapped in a single container with proper structure
-  const mapContent = (
-    <div style={{ position:'relative', width:'100%', height:'100%' }}>
-      {/* Single map container - no duplicates */}
+  // Overview page content (map + widgets + panels)
+  const overviewContent = (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div id="viewDiv" style={{ width: '100%', height: '100%' }} />
-      
-      {/* Map widgets overlay */}
       <MapWidgets />
-      
-      {/* Wrap filter and chart in shared container when both visible */}
+
       {(showFilters && showChart) ? (
         <div className={styles.panelContainer}>
           <EnhancedFilterPanel />
@@ -85,6 +82,7 @@ const App: React.FC = () => {
           )}
         </>
       )}
+
       {showStats && (
         <div className={styles.statsPanel}>
           <EnhancedStatsPanel />
@@ -93,33 +91,67 @@ const App: React.FC = () => {
     </div>
   );
 
+  // Subtle active styles for the sider items
+  const baseItemStyle: React.CSSProperties = {
+    color: '#bbb',
+    cursor: 'pointer',
+    borderLeft: '3px solid transparent',
+    transition: 'all 0.2s ease',
+    borderRadius: 4,
+  };
+
+  const activeItemStyle = (active: boolean, pad: string | number): React.CSSProperties => ({
+    ...baseItemStyle,
+    color: active ? '#fff' : '#bbb',
+    padding: pad,
+    background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
+    borderLeftColor: active ? token.colorPrimary : 'transparent',
+    fontWeight: active ? 600 : 400,
+  });
+
   return withTheme(themeMode, (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider collapsible defaultCollapsed width={220} theme="dark">
         <div style={{ color: '#fff', padding: 12, fontWeight: 600 }}>RMO Logo</div>
-        <div style={{ color: '#bbb', padding: 12, cursor: 'pointer' }}>Overview Page</div>
-        <div style={{ color: '#bbb', padding: '0 12px 12px', cursor: 'pointer' }}>Condition Summary Page</div>
+
+        {/* Sider navigation with subtle active styling */}
+        <div
+          style={activeItemStyle(currentPage === 'overview', 12)}
+          onClick={() => setCurrentPage('overview')}
+        >
+          Overview Page
+        </div>
+        <div
+          style={activeItemStyle(currentPage === 'condition-summary', '0 12px 12px')}
+          onClick={() => setCurrentPage('condition-summary')}
+        >
+          Condition Summary Page
+        </div>
       </Sider>
+
       <Layout style={{ height: '100%', overflow: 'hidden' }}>
-        <Header style={{ 
-          display:'flex', 
-          alignItems:'center', 
-          justifyContent:'space-between', 
-          background: token.colorBgContainer,
-          padding: '0 16px',
-          flexShrink: 0
-        }}>
-          <Title level={4} style={{ margin: 0 }}>{CONFIG.title}</Title>
-          {headerControls}
-        </Header>
-        <Content style={{ 
-          flex: 1, 
-          overflow: 'hidden',
-          position: 'relative'
-        }}>
-          {/* Single map content container */}
-          {mapContent}
-        </Content>
+        {currentPage === 'overview' ? (
+          <>
+            <Header style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: token.colorBgContainer,
+              padding: '0 16px',
+              flexShrink: 0
+            }}>
+              <Title level={4} style={{ margin: 0 }}>{CONFIG.title}</Title>
+              {headerControls}
+            </Header>
+
+            <Content style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              {overviewContent}
+            </Content>
+          </>
+        ) : (
+          // ConditionSummaryPage renders its own Header + Content
+          <ConditionSummaryPage />
+        )}
       </Layout>
     </Layout>
   ));

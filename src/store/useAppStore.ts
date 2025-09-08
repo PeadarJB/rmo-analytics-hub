@@ -31,6 +31,12 @@ interface AppState {
   preSwipeDefinitionExpression: string | null;
   mapInitialized: boolean; // Add flag to track initialization status
 
+  // Swipe / LA polygon layers
+  laPolygonLayers: Map<string, FeatureLayer> | null;
+  currentPage: 'overview' | 'condition-summary';
+  leftSwipeYear: number;
+  rightSwipeYear: number;
+
   // UI
   siderCollapsed: boolean;
   showFilters: boolean;
@@ -63,6 +69,11 @@ interface AppState {
   calculateStatistics: () => Promise<void>;
   updateRenderer: () => void;
   validateAndFixFilters: () => FilterState;
+
+  // New actions for Task 13
+  setCurrentPage: (page: 'overview' | 'condition-summary') => void;
+  setSwipeYears: (left: number, right: number) => void;
+  updateLALayerVisibility: () => void;
 }
 
 const initialFilters: FilterState = {
@@ -86,6 +97,12 @@ const useAppStore = create<AppState>()(
         preSwipeDefinitionExpression: null,
         mapInitialized: false, // Initialize as false
 
+        // Task 13: initial state
+        laPolygonLayers: null,
+        currentPage: 'overview',
+        leftSwipeYear: 2018,
+        rightSwipeYear: 2025,
+
         siderCollapsed: true,
         showFilters: true,
         showStats: false,
@@ -107,10 +124,30 @@ const useAppStore = create<AppState>()(
         setShowChart: (b) => set({ showChart: b, showFilters: b ? false : get().showFilters }),
         setShowSwipe: (b) => set({ showSwipe: b }),
 
+        // Task 13: actions
+        setCurrentPage: (page) => set({ currentPage: page }),
+        setSwipeYears: (left, right) => {
+          set({ leftSwipeYear: left, rightSwipeYear: right });
+          get().updateLALayerVisibility();
+        },
+        updateLALayerVisibility: () => {
+          const { laPolygonLayers, activeKpi, leftSwipeYear, rightSwipeYear, currentPage } = get();
+          if (!laPolygonLayers || currentPage !== 'condition-summary') return;
+
+          const leftLayerName = `LA_${activeKpi.toUpperCase()}_${leftSwipeYear}`;
+          const rightLayerName = `LA_${activeKpi.toUpperCase()}_${rightSwipeYear}`;
+
+          laPolygonLayers.forEach((layer, name) => {
+            layer.visible = (name === leftLayerName || name === rightLayerName);
+          });
+        },
+
         setActiveKpi: (k) => {
           set({ activeKpi: k });
           get().updateRenderer();
           get().calculateStatistics();
+          // Optionally ensure LA layers reflect KPI change:
+          get().updateLALayerVisibility();
         },
 
         setFilters: (f) => {
@@ -260,6 +297,16 @@ const useAppStore = create<AppState>()(
             const roadSwipe = webmap.allLayers.find(
               (l: any) => l.title === CONFIG.roadNetworkLayerSwipeTitle
             ) as FeatureLayer | undefined;
+
+            // Task 13: Find and store LA polygon layers
+            const laLayers = new Map<string, FeatureLayer>();
+            webmap.allLayers.forEach((layer: any) => {
+              if (layer.title && typeof layer.title === 'string' && layer.title.startsWith('LA_')) {
+                laLayers.set(layer.title, layer as FeatureLayer);
+                (layer as FeatureLayer).visible = false; // Hide all initially
+              }
+            });
+            set({ laPolygonLayers: laLayers });
             
             if (!road) {
               message.warning('Road network layer not found. Check layer title in config.');
@@ -280,6 +327,9 @@ const useAppStore = create<AppState>()(
             if (road) {
               get().updateRenderer();
             }
+
+            // Ensure LA layers visibility aligns with current state (likely all hidden initially)
+            get().updateLALayerVisibility();
             
             console.log('Map initialization completed successfully');
           } catch (e: any) {
@@ -488,7 +538,7 @@ const useAppStore = create<AppState>()(
           currentFilters: state.currentFilters,
           siderCollapsed: state.siderCollapsed,
           // Explicitly exclude: mapView, webmap, roadLayer, roadLayerSwipe, 
-          // initialExtent, mapInitialized, loading, error
+          // initialExtent, mapInitialized, loading, error, laPolygonLayers, swipe years/page
         })
       }
     )

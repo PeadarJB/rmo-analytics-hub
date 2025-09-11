@@ -129,8 +129,6 @@ export default class QueryService {
     q.where = where;
     q.returnGeometry = true;
     q.outFields = ['OBJECTID'];
-    q.returnCentroid = true;
-    q.num = 1;
     try {
       const res = await layer.queryExtent(q);
       if (res.extent) await view.goTo(res.extent.expand(1.1));

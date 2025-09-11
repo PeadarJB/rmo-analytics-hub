@@ -36,6 +36,8 @@ interface AppState {
   currentPage: 'overview' | 'condition-summary';
   leftSwipeYear: number;
   rightSwipeYear: number;
+  roadLayerVisible: boolean;
+  swipePanelAutoStart: boolean;
 
   // UI
   siderCollapsed: boolean;
@@ -61,6 +63,9 @@ interface AppState {
   setShowStats: (b: boolean) => void;
   setShowChart: (b: boolean) => void;
   setShowSwipe: (b: boolean) => void;
+  setRoadLayerVisibility: (visible: boolean) => void;
+  hideRoadNetworkForSwipe: () => void;
+  restoreRoadNetworkVisibility: () => void;
 
   setActiveKpi: (k: KPIKey) => void;
   setFilters: (f: Partial<FilterState>) => void;
@@ -95,7 +100,9 @@ const useAppStore = create<AppState>()(
         initialExtent: null,
         error: null,
         preSwipeDefinitionExpression: null,
-        mapInitialized: false, // Initialize as false
+        mapInitialized: false,
+        roadLayerVisible: true,
+        swipePanelAutoStart: false, 
 
         // Task 13: initial state
         laPolygonLayers: null,
@@ -105,7 +112,7 @@ const useAppStore = create<AppState>()(
 
         siderCollapsed: true,
         showFilters: true,
-        showStats: false,
+        showStats: true,
         showChart: false,
         showSwipe: false,
         isSwipeActive: false,
@@ -125,7 +132,18 @@ const useAppStore = create<AppState>()(
         setShowSwipe: (b) => set({ showSwipe: b }),
 
         // Task 13: actions
-        setCurrentPage: (page) => set({ currentPage: page }),
+        setCurrentPage: (page) => {
+          const state = get();
+          if (page === 'condition-summary') {
+            // Hide road layers and enable auto-start for swipe
+            state.hideRoadNetworkForSwipe();
+            set({ currentPage: page, swipePanelAutoStart: true, showSwipe: true });
+          } else {
+            // Restore road layers when leaving condition summary
+            state.restoreRoadNetworkVisibility();
+            set({ currentPage: page, swipePanelAutoStart: false });
+          }
+        },
         setSwipeYears: (left, right) => {
           set({ leftSwipeYear: left, rightSwipeYear: right });
           get().updateLALayerVisibility();
@@ -140,6 +158,26 @@ const useAppStore = create<AppState>()(
           laPolygonLayers.forEach((layer, name) => {
             layer.visible = (name === leftLayerName || name === rightLayerName);
           });
+        },
+        setRoadLayerVisibility: (visible) => {
+          const { roadLayer, roadLayerSwipe } = get();
+          if (roadLayer) roadLayer.visible = visible;
+          if (roadLayerSwipe) roadLayerSwipe.visible = visible;
+          set({ roadLayerVisible: visible });
+        },
+        
+        hideRoadNetworkForSwipe: () => {
+          const { roadLayer, roadLayerSwipe } = get();
+          if (roadLayer) roadLayer.visible = false;
+          if (roadLayerSwipe) roadLayerSwipe.visible = false;
+          set({ roadLayerVisible: false });
+        },
+        
+        restoreRoadNetworkVisibility: () => {
+          const { roadLayer, roadLayerSwipe } = get();
+          if (roadLayer) roadLayer.visible = true;
+          if (roadLayerSwipe) roadLayerSwipe.visible = true;
+          set({ roadLayerVisible: true });
         },
 
         setActiveKpi: (k) => {
@@ -537,12 +575,16 @@ const useAppStore = create<AppState>()(
                 average: 0,
                 min: 0,
                 max: 0,
+                veryGoodCount: 0,
                 goodCount: 0,
                 fairCount: 0,
                 poorCount: 0,
+                veryPoorCount: 0,
+                veryGoodPct: 0,
                 goodPct: 0,
                 fairPct: 0,
-                poorPct: 0
+                poorPct: 0,
+                veryPoorPct: 0
               }],
               lastUpdated: new Date()
             };

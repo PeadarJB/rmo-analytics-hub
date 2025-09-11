@@ -147,6 +147,21 @@ export const KPI_LABELS: Record<KPIKey, string> = {
   lpv3: 'LPV'
 };
 
+export const LA_LAYER_CONFIG = {
+  // Pattern for finding LA layers: "Average [KPI] [YEAR]"
+  layerTitlePattern: (kpi: string, year: number) => {
+    const kpiUpper = kpi.toUpperCase();
+    // Handle special case for LPV3 -> LPV
+    const displayKpi = kpiUpper === 'LPV3' ? 'LPV' : kpiUpper;
+    return `Average ${displayKpi} ${year}`;
+  },
+  // Alternative patterns if needed (for debugging)
+  alternativePatterns: [
+    (kpi: string, year: number) => `LA_${kpi.toUpperCase()}_${year}`,
+    (kpi: string, year: number) => `${year} ${kpi.toUpperCase()} Average`
+  ]
+};
+
 // Helper function to get KPI field name for a specific year
 export function getKPIFieldName(kpi: KPIKey, year: number): string {
   const baseField = CONFIG.fields[kpi];

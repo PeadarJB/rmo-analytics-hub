@@ -27,6 +27,7 @@ const ConditionSummaryPage: React.FC = () => {
   const { styles } = usePanelStyles();
   const { token } = theme.useToken();
 
+  // TO:
   useEffect(() => {
     // Initialize map if not already done
     const container = document.getElementById('conditionViewDiv');
@@ -34,8 +35,18 @@ const ConditionSummaryPage: React.FC = () => {
       initializeMap('conditionViewDiv');
     }
     
+    // Hide road network layer for this page
+    const { hideRoadNetworkForSwipe } = useAppStore.getState();
+    hideRoadNetworkForSwipe();
+    
     // Update LA layer visibility when page loads
     updateLALayerVisibility();
+    
+    // Cleanup: restore road layer visibility when leaving page
+    return () => {
+      const { restoreRoadNetworkVisibility } = useAppStore.getState();
+      restoreRoadNetworkVisibility();
+    };
   }, []);
 
   // Update visibility when KPI changes

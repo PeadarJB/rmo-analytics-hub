@@ -3,14 +3,14 @@ const PANEL_WIDTH = 500;
 export const usePanelStyles = createStyles(({ token }) => ({
   filterPanel: {
     position: 'absolute' as const,
-    top: 18,
+    bottom: 16,
     right: 16,
     width: PANEL_WIDTH,  // Use shared constant
     zIndex: 9
   },
   chartPanel: {
     position: 'absolute' as const,
-    top: 18,
+    bottom: 16,
     right: 16,
     width: PANEL_WIDTH,  // Changed from 520 to shared constant
     zIndex: 9

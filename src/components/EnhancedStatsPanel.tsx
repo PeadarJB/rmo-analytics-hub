@@ -4,7 +4,15 @@ import useAppStore from '@/store/useAppStore';
 import { CONFIG, KPI_LABELS } from '@/config/appConfig';
 
 const EnhancedStatsPanel: React.FC = () => {
-  const { currentStats, currentFilters, setFilters, activeKpi, loading } = useAppStore();
+  const { 
+    currentStats, 
+    currentFilters, 
+    setFilters, 
+    activeKpi, 
+    loading,
+    updateRenderer,
+    calculateStatistics 
+  } = useAppStore();
   const [isCalculating, setIsCalculating] = useState(false);
 
   const yearOptions = CONFIG.filters.year.options.map(o => ({
@@ -12,9 +20,12 @@ const EnhancedStatsPanel: React.FC = () => {
     value: o.value
   }));
 
-  const onYearChange = (newYear: number) => {
-    setFilters({ year: [newYear] });
-  };
+  const onYearChange = async (newYear: number) => {
+  setFilters({ year: [newYear] });
+  // Trigger map re-rendering and statistics recalculation
+  updateRenderer();
+  await calculateStatistics();
+};
 
   useEffect(() => {
     setIsCalculating(true);

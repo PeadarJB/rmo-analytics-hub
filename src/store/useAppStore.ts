@@ -180,16 +180,61 @@ const useAppStore = create<AppState>()(
           set({ currentFilters: newFilters });
         },
 
-        clearAllFilters: () => {
+        clearAllFilters: async () => {
+          const state = get();
+          
+          // Preserve current year selection
+          const currentYear = state.currentFilters.year.length > 0 
+            ? state.currentFilters.year 
+            : [CONFIG.defaultYears[0]];
+          
+          // Reset filters while maintaining year
+          const resetFilters = { 
+            localAuthority: [],
+            subgroup: [],
+            route: [],
+            year: currentYear
+          };
+          
           set({ 
-            currentFilters: { 
-              ...initialFilters, 
-              year: [CONFIG.defaultYears[0]] // Always keep at least one year selected
-            }, 
+            currentFilters: resetFilters,
             currentStats: null,
-            appliedFiltersCount: 0 
+            appliedFiltersCount: 0,
+            loading: true
           });
-          message.info('Filters cleared. Showing data for ' + CONFIG.defaultYears[0]);
+          
+          try {
+            // 1. Reset layer definition expression to show all features
+            if (state.roadLayer) {
+              (state.roadLayer as any).definitionExpression = '1=1';
+            }
+            
+            // 2. Reset map view to initial extent with animation
+            if (state.mapView && state.initialExtent) {
+              await state.mapView.goTo(state.initialExtent, {
+                duration: 1000,
+                easing: 'ease-in-out'
+              });
+            }
+            
+            // 3. Update renderer for current year/KPI combination
+            state.updateRenderer();
+            
+            // 4. Recalculate statistics for full dataset
+            await state.calculateStatistics();
+            
+            // 5. Show success message
+            message.success(
+              `Filters cleared. Showing all ${state.activeKpi.toUpperCase()} data for ${currentYear[0]}`,
+              3
+            );
+            
+          } catch (error) {
+            console.error('Error resetting filters:', error);
+            message.error('Failed to reset filters completely');
+          } finally {
+            set({ loading: false });
+          }
         },
 
         // (1) Enhanced validator replacing the previous implementation
@@ -424,8 +469,7 @@ const useAppStore = create<AppState>()(
           const filterCount = 
             (validatedFilters.localAuthority.length > 0 ? 1 : 0) +
             (validatedFilters.subgroup.length > 0 ? 1 : 0) +
-            (validatedFilters.route.length > 0 ? 1 : 0) +
-            (validatedFilters.year.length > 1 ? 1 : 0);
+            (validatedFilters.route.length > 0 ? 1 : 0)
           
           set({ appliedFiltersCount: filterCount });
 

@@ -1,5 +1,10 @@
 export type KPIKey = 'iri' | 'rut' | 'psci' | 'csc' | 'mpd' | 'lpv3';
 
+// Road segment constants
+// Each road segment in the RMO network is fixed at 100 meters length
+export const SEGMENT_LENGTH_METERS = 100;
+export const SEGMENT_LENGTH_KM = 0.1; // 100m = 0.1km
+
 // Consolidated KPI thresholds from RendererService and StatisticsService
 // Based on the 2018 Regional Report condition class definitions
 export const KPI_THRESHOLDS: Record<KPIKey, {
@@ -148,8 +153,6 @@ export const CONFIG = {
     // Note: Subgroup is handled via boolean fields, not a single field
     // The dataset stores individual boolean flags (IsFormerNa, IsDublin, etc.)
     subgroupPlaceholder: 'RoadGroupCode', // Placeholder for UI consistency
-    // Polyline length in metres; use to compute total kilometres by dividing by 1000.
-    lengthKm: 'Shape_Length'
   },
   
   filters: {

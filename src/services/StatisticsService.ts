@@ -5,7 +5,8 @@ import {
   KPIKey, 
   KPI_THRESHOLDS,
   getKPIFieldName,
-  getSimplifiedConditionClass 
+  getSimplifiedConditionClass,
+  SEGMENT_LENGTH_METERS
 } from '@/config/appConfig';
 import type { FilterState, SummaryStatistics, KPIStats } from '@/types';
 
@@ -54,7 +55,6 @@ export default class StatisticsService {
       console.log(`[StatisticsService] Computing stats for ${activeKpi} in year ${year}`);
       
       const kpiField = getKPIFieldName(activeKpi, year);
-      const lengthField = CONFIG.fields.lengthKm;
       
       // Build where clause based on current definition expression
       const baseWhere = (layer as any).definitionExpression || '1=1';
@@ -67,7 +67,6 @@ export default class StatisticsService {
         layer,
         whereClause,
         kpiField,
-        lengthField,
         activeKpi
       );
       
@@ -78,10 +77,9 @@ export default class StatisticsService {
       
       console.log(`[StatisticsService] Query results:`, results);
       
-      // Convert length from meters to kilometers
-      const totalLengthKm = (results.totalLength || 0) / 1000;
+      // Total length derived from segment count * constant segment length (m -> km)
+      const totalLengthKm = (results.totalSegments || 0) * SEGMENT_LENGTH_METERS / 1000;
       
-      // Rest of the existing calculation logic...
       // Calculate percentages
       const total = results.goodCount + results.fairCount + results.poorCount;
       const goodPct = total > 0 ? (results.goodCount / total) * 100 : 0;
@@ -121,7 +119,6 @@ export default class StatisticsService {
     layer: FeatureLayer,
     whereClause: string,
     kpiField: string,
-    lengthField: string,
     activeKpi: KPIKey
   ): Promise<any> {
     const statsQuery = layer.createQuery();
@@ -157,11 +154,6 @@ export default class StatisticsService {
         outStatisticFieldName: 'count_segments',
         statisticType: 'count'
       },
-      {
-        onStatisticField: lengthField,
-        outStatisticFieldName: 'total_length',
-        statisticType: 'sum'
-      },
       // Condition class counts using CASE expressions
       {
         onStatisticField: conditionExpressions.good,
@@ -194,7 +186,6 @@ export default class StatisticsService {
         minValue: stats.min_value,
         maxValue: stats.max_value,
         totalSegments: stats.count_segments,
-        totalLength: stats.total_length,
         goodCount: Math.round(stats.good_count || 0),
         fairCount: Math.round(stats.fair_count || 0),
         poorCount: Math.round(stats.poor_count || 0)
@@ -205,7 +196,7 @@ export default class StatisticsService {
       console.log('Query details:', { whereClause, kpiField, activeKpi });
       
       // Fallback to separate queries if CASE expressions are not supported
-      return this.executeFallbackQueries(layer, whereClause, kpiField, lengthField, activeKpi);
+      return this.executeFallbackQueries(layer, whereClause, kpiField, activeKpi);
     }
   }
   
@@ -272,10 +263,9 @@ export default class StatisticsService {
     layer: FeatureLayer,
     baseWhere: string,
     kpiField: string,
-    lengthField: string,
     activeKpi: KPIKey
   ): Promise<any> {
-    // First query: basic statistics
+    // First query: basic statistics (no total length)
     const statsQuery = layer.createQuery();
     statsQuery.where = baseWhere;
     statsQuery.returnGeometry = false;
@@ -299,11 +289,6 @@ export default class StatisticsService {
         onStatisticField: kpiField,
         outStatisticFieldName: 'count_segments',
         statisticType: 'count'
-      },
-      {
-        onStatisticField: lengthField,
-        outStatisticFieldName: 'total_length',
-        statisticType: 'sum'
       }
     ] as any;
     
@@ -323,7 +308,6 @@ export default class StatisticsService {
       minValue: stats.min_value,
       maxValue: stats.max_value,
       totalSegments: stats.count_segments,
-      totalLength: stats.total_length,
       goodCount: conditionCounts.good,
       fairCount: conditionCounts.fair,
       poorCount: conditionCounts.poor

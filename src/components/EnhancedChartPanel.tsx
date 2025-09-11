@@ -8,8 +8,8 @@ import QueryService from '@/services/QueryService';
 // Define the grouping options for the chart
 const groupByOptions = [
   { label: 'Local Authority', value: CONFIG.fields.la },
-  { label: 'Route', value: CONFIG.fields.route }
-  // Subgroup removed - requires special query handling (boolean fields)
+  { label: 'Route', value: CONFIG.fields.route },
+  { label: 'Subgroup', value: 'subgroup' } 
 ];
 
 const EnhancedChartPanel: React.FC = () => {
@@ -18,36 +18,47 @@ const EnhancedChartPanel: React.FC = () => {
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
 
-  const [groupBy, setGroupBy] = useState(CONFIG.defaultGroupBy);
+  const [groupBy, setGroupBy] = useState<'subgroup' | string>(CONFIG.defaultGroupBy);
   const [groupedData, setGroupedData] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // This effect runs whenever a key dependency changes
     const fetchAndRenderChart = async () => {
       setLoading(true);
       setError(null);
       
       const year = currentFilters.year.length > 0 ? currentFilters.year[0] : CONFIG.defaultYears[0];
       const kpiField = getKPIFieldName(activeKpi as KPIKey, year);
-      
-      // The WHERE clause is defined on the feature layer
       const whereClause = (roadLayer as any)?.definitionExpression || '1=1';
-
+  
       try {
-        const data = await QueryService.computeGroupedStatistics(
-          roadLayer,
-          kpiField,
-          groupBy,
-          whereClause
-        );
+        let data;
+        
+        // Special handling for subgroup aggregation
+        if (groupBy === 'subgroup') {
+          data = await QueryService.computeSubgroupStatistics(
+            roadLayer,
+            kpiField,
+            whereClause
+          );
+        } else {
+          // Regular grouping for LA and Route
+          data = await QueryService.computeGroupedStatistics(
+            roadLayer,
+            kpiField,
+            groupBy,
+            whereClause
+          );
+        }
         
         if (!data || data.length === 0) {
           setError("No data found for the current selection. Please adjust your filters.");
           setGroupedData([]);
         } else {
-          setGroupedData(data);
+          // Sort data by average value descending for better visualization
+          const sortedData = data.sort((a, b) => b.avgValue - a.avgValue);
+          setGroupedData(sortedData);
           setError(null);
         }
       } catch (e: any) {
@@ -58,9 +69,9 @@ const EnhancedChartPanel: React.FC = () => {
         setLoading(false);
       }
     };
-
+  
     fetchAndRenderChart();
-
+  
   }, [roadLayer, activeKpi, currentFilters, groupBy]);
   
   useEffect(() => {
@@ -89,7 +100,10 @@ const EnhancedChartPanel: React.FC = () => {
         legend: { display: false },
         title: {
           display: true,
-          text: `Average ${KPI_LABELS[activeKpi]} by ${groupByOptions.find(o => o.value === groupBy)?.label || groupBy}`
+          text: `Average ${KPI_LABELS[activeKpi]} by ${
+            groupBy === 'subgroup' ? 'Subgroup' : 
+            groupByOptions.find(o => o.value === groupBy)?.label || groupBy
+          }`
         },
       },
       scales: {

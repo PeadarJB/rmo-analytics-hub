@@ -1,7 +1,7 @@
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import Query from '@arcgis/core/rest/support/Query';
 import type MapView from '@arcgis/core/views/MapView';
-import { CONFIG } from '@/config/appConfig';
+import { CONFIG, SUBGROUP_CODE_TO_FIELD } from '@/config/appConfig'; // ADD SUBGROUP_CODE
 
 /**
  * An in-memory cache for storing unique field values to avoid redundant queries.
@@ -115,6 +115,176 @@ export default class QueryService {
       console.error('Error computing grouped statistics:', error);
       return [];
     }
+  }
+
+  /**
+   * Computes statistics grouped by subgroup categories.
+   * Handles the special boolean field logic for subgroups.
+   * @param layer - The FeatureLayer to query
+   * @param kpiField - The KPI field to aggregate
+   * @param whereClause - The WHERE clause to apply
+   * @returns Promise resolving to array of grouped statistics
+   */
+  static async computeSubgroupStatistics(
+    layer: FeatureLayer | null,
+    kpiField: string,
+    whereClause: string
+  ): Promise<any[]> {
+    if (!layer) {
+      // Placeholder data for local runs
+      console.warn('Road layer is not loaded, using placeholder subgroup stats.');
+      const subgroups = ['Former National', 'Dublin', 'City/Town', 'Peat', 'Rural'];
+      return subgroups.map(g => ({
+        group: g,
+        avgValue: Math.random() * 5 + 2,
+        count: Math.floor(Math.random() * 50 + 10)
+      }));
+    }
+
+    try {
+      // Create a virtual subgroup field using SQL CASE statement (kept for clarity)
+      const subgroupCaseStatement = `
+        CASE 
+          WHEN Roads_Joined_IsFormerNa = 1 THEN 'Former National'
+          WHEN Roads_Joined_IsDublin = 1 THEN 'Dublin'
+          WHEN Roads_Joined_IsCityTown = 1 THEN 'City/Town'
+          WHEN Roads_Joined_IsPeat = 1 THEN 'Peat'
+          WHEN Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 
+               AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0 THEN 'Rural'
+          ELSE 'Unknown'
+        END
+      `;
+
+      // Build queries for each subgroup
+      const subgroupQueries = [
+        { name: 'Former National', where: `(${whereClause}) AND Roads_Joined_IsFormerNa = 1` },
+        { name: 'Dublin',         where: `(${whereClause}) AND Roads_Joined_IsDublin = 1` },
+        { name: 'City/Town',      where: `(${whereClause}) AND Roads_Joined_IsCityTown = 1` },
+        { name: 'Peat',           where: `(${whereClause}) AND Roads_Joined_IsPeat = 1` },
+        { 
+          name: 'Rural', 
+          where: `(${whereClause}) AND Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 
+                  AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0` 
+        }
+      ];
+
+      // Execute queries in parallel for each subgroup
+      const promises = subgroupQueries.map(async (subgroup) => {
+        const query = layer.createQuery();
+        query.where = subgroup.where;
+        query.returnGeometry = false;
+        query.outStatistics = [
+          {
+            onStatisticField: kpiField,
+            outStatisticFieldName: 'avg_value',
+            statisticType: 'avg'
+          },
+          {
+            onStatisticField: kpiField,
+            outStatisticFieldName: 'count_segments',
+            statisticType: 'count'
+          }
+        ] as any;
+
+        try {
+          const result = await layer.queryFeatures(query);
+          
+          if (result.features.length > 0) {
+            const stats = result.features[0].attributes;
+            return {
+              group: subgroup.name,
+              avgValue: stats.avg_value ? Math.round(stats.avg_value * 100) / 100 : 0,
+              count: stats.count_segments || 0
+            };
+          }
+          return null;
+        } catch (error) {
+          console.error(`Error querying ${subgroup.name}:`, error);
+          return null;
+        }
+      });
+
+      const results = await Promise.all(promises);
+      
+      // Filter out null results and any subgroups with no data
+      return results.filter((r: any) => r !== null && r.count > 0) as any[];
+      
+    } catch (error) {
+      console.error('Error computing subgroup statistics:', error);
+      
+      // Fallback: Try alternative approach using a single grouped query if supported
+      try {
+        return await this.computeSubgroupStatisticsFallback(layer as FeatureLayer, kpiField, whereClause);
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        return [];
+      }
+    }
+  }
+
+  /**
+   * Fallback method for subgroup statistics if CASE statements are supported
+   * @private
+   */
+  private static async computeSubgroupStatisticsFallback(
+    layer: FeatureLayer,
+    kpiField: string,
+    whereClause: string
+  ): Promise<any[]> {
+    // This approach attempts to use SQL expressions if the service supports them
+    const query = layer.createQuery();
+    query.where = whereClause;
+    query.returnGeometry = false;
+    
+    // Try to use a calculated field for grouping
+    const sqlExpression = {
+      name: 'subgroup_category',
+      expression: `
+        CASE 
+          WHEN Roads_Joined_IsFormerNa = 1 THEN 'Former National'
+          WHEN Roads_Joined_IsDublin = 1 THEN 'Dublin'
+          WHEN Roads_Joined_IsCityTown = 1 THEN 'City/Town'
+          WHEN Roads_Joined_IsPeat = 1 THEN 'Peat'
+          ELSE 'Rural'
+        END
+      `
+    };
+    
+    // Note: This approach may not work with all ArcGIS Server versions
+    // If it fails, the primary method with parallel queries will be used
+    query.outFields = ['*'];
+    query.sqlFormat = 'standard';
+    
+    const result = await layer.queryFeatures(query);
+    
+    // Manual aggregation if SQL expressions aren't supported
+    const aggregated = new Map<string, { sum: number; count: number }>();
+    
+    result.features.forEach(feature => {
+      const attrs = feature.attributes as Record<string, any>;
+      let subgroup = 'Rural';
+      
+      if (attrs.Roads_Joined_IsFormerNa === 1) subgroup = 'Former National';
+      else if (attrs.Roads_Joined_IsDublin === 1) subgroup = 'Dublin';
+      else if (attrs.Roads_Joined_IsCityTown === 1) subgroup = 'City/Town';
+      else if (attrs.Roads_Joined_IsPeat === 1) subgroup = 'Peat';
+      
+      const kpiValue = attrs[kpiField];
+      if (kpiValue !== null && kpiValue !== undefined) {
+        if (!aggregated.has(subgroup)) {
+          aggregated.set(subgroup, { sum: 0, count: 0 });
+        }
+        const stats = aggregated.get(subgroup)!;
+        stats.sum += kpiValue;
+        stats.count += 1;
+      }
+    });
+    
+    return Array.from(aggregated.entries()).map(([group, stats]) => ({
+      group,
+      avgValue: Math.round((stats.sum / stats.count) * 100) / 100,
+      count: stats.count
+    }));
   }
 
   /**

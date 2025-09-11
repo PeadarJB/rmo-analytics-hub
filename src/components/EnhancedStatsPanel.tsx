@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Card, Statistic, Row, Col, Divider, Tag, Space, Segmented, Spin, Alert } from 'antd';
 import useAppStore from '@/store/useAppStore';
 import { CONFIG, KPI_LABELS } from '@/config/appConfig';
-import { usePanelStyles } from '@/styles/styled';
 
 const EnhancedStatsPanel: React.FC = () => {
   const { 
@@ -37,24 +36,21 @@ const EnhancedStatsPanel: React.FC = () => {
   // The first year in the array is the one we display stats for
   const selectedYear = currentFilters.year.length > 0 ? currentFilters.year[0] : null;
 
-  const { styles } = usePanelStyles();
+  
 
   if (isCalculating) {
     return (
-      <div className={styles.statsPanel}>
       <Card size="small" title="Summary Statistics">
         <div style={{ textAlign: 'center', padding: '20px' }}>
           <Spin size="large" />
           <div style={{ marginTop: '12px' }}>Calculating statistics...</div>
         </div>
       </Card>
-      </div>
     );
   }
 
   if (!currentStats || currentStats.totalSegments === 0 || !selectedYear) {
     return (
-      <div className={styles.statsPanel}>
       <Card size="small" title="Summary Statistics">
         <Space direction="vertical" style={{ width: '100%' }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Survey Year</div>
@@ -73,7 +69,6 @@ const EnhancedStatsPanel: React.FC = () => {
           />
         </Space>
       </Card>
-      </div>
     );
   }
 
@@ -81,7 +76,6 @@ const EnhancedStatsPanel: React.FC = () => {
   const kpiTitle = `${KPI_LABELS[activeKpi]}`;
 
   return (
-    <div className={styles.statsPanel}>
     <Card 
       size="small" 
       title="Summary Statistics"
@@ -118,56 +112,58 @@ const EnhancedStatsPanel: React.FC = () => {
             <Col span={8}><Statistic title="Min" value={kpiStats.min} precision={2} /></Col>
             <Col span={8}><Statistic title="Max" value={kpiStats.max} precision={2} /></Col>
 
+            <Divider style={{ margin: '12px 0' }} />
+
             {/* 5-Class Percentages */}
             <Col span={24}>
-              <div style={{ fontSize: 11, fontWeight: 600, marginTop: 8, marginBottom: 4 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginTop: 8, marginBottom: 4 }}>
                 Condition Distribution
               </div>
             </Col>
 
             <Col span={8}>
               <Statistic
-                title={<span style={{ fontSize: 11 }}>Very Good</span>}
+                title={<span style={{ fontSize: 14, fontWeight: 600, }}>Very Good</span>}
                 value={kpiStats.veryGoodPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, color: '#52c41a' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#52c41a' }}
               />
             </Col>
             <Col span={8}>
               <Statistic
-                title={<span style={{ fontSize: 11 }}>Good</span>}
+                title={<span style={{ fontSize: 14, fontWeight: 600 }}>Good</span>}
                 value={kpiStats.goodPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, color: '#95de64' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#95de64' }}
               />
             </Col>
             <Col span={8}>
               <Statistic
-                title={<span style={{ fontSize: 11 }}>Fair</span>}
+                title={<span style={{ fontSize: 14, fontWeight: 600 }}>Fair</span>}
                 value={kpiStats.fairPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, color: '#faad14' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#faad14' }}
               />
             </Col>
             <Col span={8}>
               <Statistic
-                title={<span style={{ fontSize: 11 }}>Poor</span>}
+                title={<span style={{ fontSize: 14, fontWeight: 600 }}>Poor</span>}
                 value={kpiStats.poorPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, color: '#ff7875' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#ff7875' }}
               />
             </Col>
             <Col span={8}>
               <Statistic
-                title={<span style={{ fontSize: 11 }}>Very Poor</span>}
+                title={<span style={{ fontSize: 14, fontWeight: 600 }}>Very Poor</span>}
                 value={kpiStats.veryPoorPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, color: '#cf1322' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#cf1322' }}
               />
             </Col>
           </Row>
@@ -179,7 +175,6 @@ const EnhancedStatsPanel: React.FC = () => {
         Updated for {selectedYear} data: {new Date(currentStats.lastUpdated).toLocaleString()}
       </div>
     </Card>
-    </div>
   );
 };
 

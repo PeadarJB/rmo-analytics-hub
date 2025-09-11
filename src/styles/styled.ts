@@ -22,7 +22,7 @@ export const usePanelStyles = createStyles(({ token }) => ({
     width: PANEL_WIDTH,
     maxHeight: '65vh',   // prevent overflow if many stats
     overflowY: 'auto',   // scrollable if content too tall
-    zIndex: 9,
+    zIndex: 99,
   },
   swipePanel: {
     position: 'absolute' as const,

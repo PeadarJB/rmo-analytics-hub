@@ -1,7 +1,7 @@
 // src/components/SimpleSwipePanel.tsx - Adapted for RMO Analytics Hub
 
 import { useState, useEffect, useCallback, FC } from 'react';
-import { Card, Select, Button, Space, Slider, Radio, Tag, message, Tooltip, Divider } from 'antd';
+import { Card, Select, Button, Space, Slider, Radio, Tag, message, Tooltip, Divider, theme } from 'antd';
 import { SwapOutlined, CloseOutlined } from '@ant-design/icons';
 import type { KPIKey } from '@/config/appConfig';
 
@@ -9,7 +9,7 @@ import type { KPIKey } from '@/config/appConfig';
 import useAppStore from '@/store/useAppStore';
 
 // Style imports - Using existing RMO styles
-import { usePanelStyles, useCommonStyles } from '@/styles/styled';
+import { usePanelStyles } from '@/styles/styled';
 
 // Type imports
 import type Swipe from '@arcgis/core/widgets/Swipe';
@@ -23,7 +23,7 @@ interface SimpleSwipePanelProps {}
 
 const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   const { styles: panelStyles } = usePanelStyles();
-  const { theme } = useCommonStyles();
+  const { token } = theme.useToken();
 
   // Zustand state and actions from RMO store
   const {
@@ -33,30 +33,11 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
     laPolygonLayers,
     leftSwipeYear,
     rightSwipeYear,
-  } = useAppStore(state => ({
-    mapView: state.mapView,
-    isSwipeActive: state.isSwipeActive,
-    activeKpi: state.activeKpi,
-    laPolygonLayers: state.laPolygonLayers,
-    leftSwipeYear: state.leftSwipeYear,
-    rightSwipeYear: state.rightSwipeYear,
-  }));
-  
-  // Zustand actions from RMO store
-  const {
-    setIsSwipeActive,
     enterSwipeMode,
     exitSwipeMode,
     setSwipeYears,
     setShowSwipe,
-  } = useAppStore(state => ({
-    setIsSwipeActive: (active: boolean) => state.setShowSwipe(active), // Simplified for RMO
-    enterSwipeMode: state.enterSwipeMode,
-    exitSwipeMode: state.exitSwipeMode,
-    setSwipeYears: state.setSwipeYears,
-    setShowSwipe: state.setShowSwipe,
-  }));
-
+  } = useAppStore();
 
   // Local state for UI controls
   const [leftYear, setLeftYear] = useState<number>(leftSwipeYear);
@@ -78,10 +59,10 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       swipeWidget.destroy();
       exitSwipeMode(); // Restore previous filter state if any
       setSwipeWidget(null);
-      setIsSwipeActive(false);
+      useAppStore.setState({ isSwipeActive: false });
       message.info('Layer comparison deactivated');
     }
-  }, [swipeWidget, view, setIsSwipeActive, exitSwipeMode]);
+  }, [swipeWidget, view, exitSwipeMode]);
 
   // Cleanup effect when the component unmounts
   useEffect(() => {
@@ -113,7 +94,6 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       const leftLayer = findLayer(activeKpi, leftYear);
       const rightLayer = findLayer(rightYear === leftYear ? activeKpi : activeKpi, rightYear);
 
-
       if (!leftLayer || !rightLayer) {
         message.error(`Could not find comparison layers for ${KPI_LABELS[activeKpi]} in ${leftYear} vs ${rightYear}.`);
         exitSwipeMode();
@@ -136,7 +116,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
 
       view.ui.add(swipe);
       setSwipeWidget(swipe);
-      setIsSwipeActive(true);
+      useAppStore.setState({ isSwipeActive: true });
       setSwipeYears(leftYear, rightYear); // Update global state
       message.success('Layer comparison activated');
     } catch (error) {
@@ -158,7 +138,6 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
     }
   }, [activeKpi]);
 
-
   const updatePosition = (value: number) => {
     setPosition(value);
     if (swipeWidget) swipeWidget.position = value;
@@ -179,7 +158,6 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
     value: o.value 
   })) ?? [];
 
-
   if (!view) return null;
 
   return (
@@ -194,47 +172,93 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       size="small"
       className={panelStyles.swipePanel}
       extra={<Button type="text" icon={<CloseOutlined />} onClick={handleClose} size="small" />}
+      styles={{
+        body: { padding: token.padding },
+        header: { 
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer
+        }
+      }}
     >
       <Space direction="vertical" style={{ width: '100%' }}>
         
         {/* --- RMO-Specific Year Selection Controls --- */}
         <div>
-            <label style={{ display: 'block', marginBottom: theme.marginXS, fontWeight: 500 }}>Left/Top Year:</label>
-            <Select
-                style={{ width: '100%' }}
-                options={yearOptions}
-                value={leftYear}
-                onChange={setLeftYear}
-                disabled={isSwipeActive}
-            />
+          <label style={{ 
+            display: 'block', 
+            marginBottom: token.marginXS, 
+            fontWeight: 500,
+            color: token.colorText
+          }}>
+            Left/Top Year:
+          </label>
+          <Select
+            style={{ width: '100%' }}
+            options={yearOptions}
+            value={leftYear}
+            onChange={setLeftYear}
+            disabled={isSwipeActive}
+          />
         </div>
         <div>
-            <label style={{ display: 'block', marginBottom: theme.marginXS, fontWeight: 500 }}>Right/Bottom Year:</label>
-            <Select
-                style={{ width: '100%' }}
-                options={yearOptions}
-                value={rightYear}
-                onChange={setRightYear}
-                disabled={isSwipeActive}
-            />
+          <label style={{ 
+            display: 'block', 
+            marginBottom: token.marginXS, 
+            fontWeight: 500,
+            color: token.colorText
+          }}>
+            Right/Bottom Year:
+          </label>
+          <Select
+            style={{ width: '100%' }}
+            options={yearOptions}
+            value={rightYear}
+            onChange={setRightYear}
+            disabled={isSwipeActive}
+          />
         </div>
 
-        <Divider style={{margin: '8px 0'}} />
+        <Divider style={{ margin: '8px 0' }} />
         
         {/* --- Generic Swipe Controls --- */}
         <div>
-            <label style={{ display: 'block', marginBottom: theme.marginXS, fontWeight: 500 }}>Swipe Direction:</label>
-            <Radio.Group value={direction} onChange={(e) => updateDirection(e.target.value)} disabled={!isSwipeActive}>
-                <Radio.Button value="horizontal">Horizontal</Radio.Button>
-                <Radio.Button value="vertical">Vertical</Radio.Button>
-            </Radio.Group>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: token.marginXS, 
+            fontWeight: 500,
+            color: token.colorText
+          }}>
+            Swipe Direction:
+          </label>
+          <Radio.Group 
+            value={direction} 
+            onChange={(e) => updateDirection(e.target.value)} 
+            disabled={!isSwipeActive}
+          >
+            <Radio.Button value="horizontal">Horizontal</Radio.Button>
+            <Radio.Button value="vertical">Vertical</Radio.Button>
+          </Radio.Group>
         </div>
+        
         {isSwipeActive && (
           <div>
-            <label style={{ display: 'block', marginBottom: theme.marginXS, fontWeight: 500 }}>Position: {position}%</label>
-            <Slider value={position} onChange={updatePosition} marks={{ 0: '0%', 50: '50%', 100: '100%' }} />
+            <label style={{ 
+              display: 'block', 
+              marginBottom: token.marginXS, 
+              fontWeight: 500,
+              color: token.colorText
+            }}>
+              Position: {position}%
+            </label>
+            <Slider 
+              value={position} 
+              onChange={updatePosition} 
+              marks={{ 0: '0%', 50: '50%', 100: '100%' }}
+              tooltip={{ formatter: (val) => `${val}%` }}
+            />
           </div>
         )}
+        
         <Button
           type={isSwipeActive ? 'default' : 'primary'}
           icon={isSwipeActive ? <CloseOutlined /> : <SwapOutlined />}

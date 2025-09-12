@@ -7,6 +7,32 @@ export type KPIKey = 'iri' | 'rut' | 'psci' | 'csc' | 'mpd' | 'lpv3';
 export const SEGMENT_LENGTH_METERS = 100;
 export const SEGMENT_LENGTH_KM = 0.1; // 100m = 0.1km
 
+// KPI Labels - MOVED BEFORE SWIPE_LAYER_CONFIG
+export const KPI_LABELS: Record<KPIKey, string> = {
+  iri: 'IRI',
+  rut: 'Rut Depth',
+  psci: 'PSCI',
+  csc: 'CSC',
+  mpd: 'MPD',
+  lpv3: 'LPV'
+};
+
+// LA Layer configuration - MOVED BEFORE SWIPE_LAYER_CONFIG
+export const LA_LAYER_CONFIG = {
+  // Primary pattern for finding LA layers
+  layerTitlePattern: (kpi: string, year: number) => {
+    const kpiUpper = kpi.toUpperCase();
+    const displayKpi = kpiUpper === 'LPV3' ? 'LPV' : kpiUpper;
+    return `Average ${displayKpi} ${year}`;
+  },
+  // Alternative patterns to try if primary fails
+  alternativePatterns: [
+    (kpi: string, year: number) => `${year} Average ${kpi.toUpperCase()}`,
+    (kpi: string, year: number) => `LA ${kpi.toUpperCase()} ${year}`,
+    (kpi: string, year: number) => `${kpi.toUpperCase()} ${year} Average`
+  ]
+};
+
 // Consolidated KPI thresholds from RendererService and StatisticsService
 // Based on the 2018 Regional Report condition class definitions
 export const KPI_THRESHOLDS: Record<KPIKey, {
@@ -96,8 +122,6 @@ export const RENDERER_CONFIG = {
   lineWidth: 4
 };
 
-// --- START: New Code to Add ---
-
 /**
  * Defines the structure for a selectable layer in the swipe panel.
  */
@@ -145,8 +169,6 @@ export const SWIPE_LAYER_CONFIG: {
   }
 };
 
-// --- END: New Code to Add ---
-
 export const CONFIG = {
   title: 'RMO Pavement Analytics',
   webMapId: '9aff0a681f67430cad396dc9cac99e05',
@@ -190,30 +212,6 @@ export const CONFIG = {
   defaultGroupBy: 'Roads_Joined_LA',
   map: { center: [-8.0, 53.3] as [number, number], zoom: 7 }
 } as const;
-
-export const KPI_LABELS: Record<KPIKey, string> = {
-  iri: 'IRI',
-  rut: 'Rut Depth',
-  psci: 'PSCI',
-  csc: 'CSC',
-  mpd: 'MPD',
-  lpv3: 'LPV'
-};
-
-export const LA_LAYER_CONFIG = {
-  // Primary pattern for finding LA layers
-  layerTitlePattern: (kpi: string, year: number) => {
-    const kpiUpper = kpi.toUpperCase();
-    const displayKpi = kpiUpper === 'LPV3' ? 'LPV' : kpiUpper;
-    return `Average ${displayKpi} ${year}`;
-  },
-  // Alternative patterns to try if primary fails
-  alternativePatterns: [
-    (kpi: string, year: number) => `${year} Average ${kpi.toUpperCase()}`,
-    (kpi: string, year: number) => `LA ${kpi.toUpperCase()} ${year}`,
-    (kpi: string, year: number) => `${kpi.toUpperCase()} ${year} Average`
-  ]
-};
 
 // Helper function to get KPI field name for a specific year
 export function getKPIFieldName(kpi: KPIKey, year: number): string {

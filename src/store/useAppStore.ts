@@ -322,6 +322,27 @@ const useAppStore = create<AppState>()(
           return currentFilters;
         },
 
+        enterSwipeMode: () => {
+          const { roadLayer } = get();
+          if (roadLayer) {
+            set({ preSwipeDefinitionExpression: (roadLayer as any).definitionExpression || '1=1' });
+          }
+        },
+
+        /**
+         * Restores the application state after exiting swipe mode.
+         * It restores the saved filter definition to the main road layer.
+         */
+        exitSwipeMode: () => {
+          const { roadLayer, preSwipeDefinitionExpression } = get();
+          if (roadLayer) {
+            (roadLayer as any).definitionExpression = preSwipeDefinitionExpression || '1=1';
+            // Make the layer visible only if a filter was active before swiping
+            roadLayer.visible = preSwipeDefinitionExpression !== '1=1';
+          }
+          set({ preSwipeDefinitionExpression: null });
+        },
+
         initializeMap: async (containerId: string) => {
           const state = get();
           
@@ -413,6 +434,10 @@ const useAppStore = create<AppState>()(
 
             // Ensure LA layers visibility aligns with current state (likely all hidden initially)
             get().updateLALayerVisibility();
+
+            if (state.mapView) {
+              state.mapView.destroy();
+            }
             
             console.log('Map initialization completed successfully');
           } catch (e: any) {
@@ -445,6 +470,8 @@ const useAppStore = create<AppState>()(
           }
           
           const clauses: string[] = [];
+
+          
 
           // Local Authority filter
           if (validatedFilters.localAuthority.length) {

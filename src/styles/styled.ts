@@ -1,5 +1,6 @@
 import { createStyles } from 'antd-style';
 const PANEL_WIDTH = 500;
+
 export const usePanelStyles = createStyles(({ token }) => ({
   filterPanel: {
     position: 'absolute' as const,

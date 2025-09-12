@@ -1,3 +1,5 @@
+// rmo-analytics-hub/src/config/appConfig.ts
+
 export type KPIKey = 'iri' | 'rut' | 'psci' | 'csc' | 'mpd' | 'lpv3';
 
 // Road segment constants
@@ -94,6 +96,57 @@ export const RENDERER_CONFIG = {
   lineWidth: 4
 };
 
+// --- START: New Code to Add ---
+
+/**
+ * Defines the structure for a selectable layer in the swipe panel.
+ */
+interface SwipeLayerOption {
+  title: string;
+  label: string;
+  kpi: KPIKey;
+  year: number;
+}
+
+/**
+ * Configuration for the Swipe Panel.
+ * This defines the default layers available for comparison between different years.
+ * The structure is adapted from the TII project for consistency.
+ */
+export const SWIPE_LAYER_CONFIG: {
+  leftPanel: { label: string; layers: ReadonlyArray<SwipeLayerOption> };
+  rightPanel: { label: string; layers: ReadonlyArray<SwipeLayerOption> };
+} = {
+  // Corresponds to the 'leadingLayers' in the swipe widget
+  leftPanel: {
+    label: 'Left/Top Layer (2018)',
+    layers: Object.keys(KPI_LABELS).map(key => {
+      const kpi = key as KPIKey;
+      return {
+        title: LA_LAYER_CONFIG.layerTitlePattern(kpi, 2018),
+        label: `${KPI_LABELS[kpi]} (2018)`,
+        kpi: kpi,
+        year: 2018,
+      };
+    })
+  },
+  // Corresponds to the 'trailingLayers' in the swipe widget
+  rightPanel: {
+    label: 'Right/Bottom Layer (2025)',
+    layers: Object.keys(KPI_LABELS).map(key => {
+      const kpi = key as KPIKey;
+      return {
+        title: LA_LAYER_CONFIG.layerTitlePattern(kpi, 2025),
+        label: `${KPI_LABELS[kpi]} (2025)`,
+        kpi: kpi,
+        year: 2025,
+      };
+    })
+  }
+};
+
+// --- END: New Code to Add ---
+
 export const CONFIG = {
   title: 'RMO Pavement Analytics',
   webMapId: '9aff0a681f67430cad396dc9cac99e05',
@@ -148,17 +201,17 @@ export const KPI_LABELS: Record<KPIKey, string> = {
 };
 
 export const LA_LAYER_CONFIG = {
-  // Pattern for finding LA layers: "Average [KPI] [YEAR]"
+  // Primary pattern for finding LA layers
   layerTitlePattern: (kpi: string, year: number) => {
     const kpiUpper = kpi.toUpperCase();
-    // Handle special case for LPV3 -> LPV
     const displayKpi = kpiUpper === 'LPV3' ? 'LPV' : kpiUpper;
     return `Average ${displayKpi} ${year}`;
   },
-  // Alternative patterns if needed (for debugging)
+  // Alternative patterns to try if primary fails
   alternativePatterns: [
-    (kpi: string, year: number) => `LA_${kpi.toUpperCase()}_${year}`,
-    (kpi: string, year: number) => `${year} ${kpi.toUpperCase()} Average`
+    (kpi: string, year: number) => `${year} Average ${kpi.toUpperCase()}`,
+    (kpi: string, year: number) => `LA ${kpi.toUpperCase()} ${year}`,
+    (kpi: string, year: number) => `${kpi.toUpperCase()} ${year} Average`
   ]
 };
 

@@ -80,7 +80,7 @@ const MapWidgets: React.FC = () => {
     });
     
     // Position BasemapGallery at bottom-left to avoid panel conflicts
-    mapView.ui.add(exGallery, 'bottom-left');
+    mapView.ui.add(exGallery, 'top-left');
 
     // Cleanup
     return () => {

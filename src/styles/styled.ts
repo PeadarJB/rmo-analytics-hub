@@ -4,21 +4,21 @@ const PANEL_WIDTH = 500;
 export const usePanelStyles = createStyles(({ token }) => ({
   filterPanel: {
     position: 'absolute' as const,
-    bottom: 16,
+    bottom: 20,
     right: 16,
     width: PANEL_WIDTH,  // Use shared constant
     zIndex: 9
   },
   chartPanel: {
     position: 'absolute' as const,
-    bottom: 16,
+    bottom: 20,
     right: 16,
     width: PANEL_WIDTH,  // Changed from 520 to shared constant
     zIndex: 9
   },
   statsPanel: {
     position: 'absolute' as const,
-    bottom: 16,
+    bottom: 20,
     left: 16,
     width: PANEL_WIDTH,
     maxHeight: '65vh',   // prevent overflow if many stats
@@ -27,7 +27,7 @@ export const usePanelStyles = createStyles(({ token }) => ({
   },
   swipePanel: {
     position: 'absolute' as const,
-    bottom: 16,
+    bottom: 20,
     right: 16,
     width: 380,
     zIndex: 9

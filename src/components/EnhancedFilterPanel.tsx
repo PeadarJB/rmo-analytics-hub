@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Select, Button, Space, Badge, Spin } from 'antd'; // ADD Spin
+import { Card, Select, Button, Space, Badge, Spin, theme } from 'antd'; // ADD Spin
 import { FilterOutlined, ClearOutlined } from '@ant-design/icons'; // ADD icons
 import useAppStore from '@/store/useAppStore';
 import QueryService from '@/services/QueryService';
@@ -9,6 +9,7 @@ const EnhancedFilterPanel: React.FC = () => {
   const { roadLayer, currentFilters, setFilters, applyFilters, clearAllFilters, loading } = useAppStore();
   const [laOptions, setLaOptions] = useState<string[]>([]);
   const [routeOptions, setRouteOptions] = useState<string[]>([]);
+  const { token } = theme.useToken();
 
   useEffect(() => {
     // Load unique values for LA and Route only
@@ -103,10 +104,10 @@ const EnhancedFilterPanel: React.FC = () => {
         <div style={{ 
           marginTop: 12, 
           padding: '8px 12px', 
-          background: 'rgba(114, 46, 209, 0.05)',
+          background: token.colorPrimaryBg,
           borderRadius: 4,
           fontSize: 12,
-          color: '#722ed1'
+          color: token.colorPrimary
         }}>
           {counter} filter{counter > 1 ? 's' : ''} active. Clear All will reset while keeping year {currentFilters.year[0]}.
         </div>

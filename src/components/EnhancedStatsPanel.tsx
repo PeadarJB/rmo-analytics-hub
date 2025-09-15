@@ -165,7 +165,7 @@ const EnhancedStatsPanel: React.FC = () => {
                 value={kpiStats.veryGoodPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#52c41a' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: token.colorSuccess }}
               />
             </Col>
             <Col span={8}>
@@ -174,7 +174,7 @@ const EnhancedStatsPanel: React.FC = () => {
                 value={kpiStats.goodPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#95de64' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: token.green4 }}
               />
             </Col>
             <Col span={8}>
@@ -183,7 +183,7 @@ const EnhancedStatsPanel: React.FC = () => {
                 value={kpiStats.fairPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#faad14' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: token.colorWarning }}
               />
             </Col>
             <Col span={8}>
@@ -192,7 +192,7 @@ const EnhancedStatsPanel: React.FC = () => {
                 value={kpiStats.poorPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#ff7875' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: token.orange5 }}
               />
             </Col>
             <Col span={8}>
@@ -201,7 +201,7 @@ const EnhancedStatsPanel: React.FC = () => {
                 value={kpiStats.veryPoorPct}
                 precision={1}
                 suffix="%"
-                valueStyle={{ fontSize: 14, fontWeight: 600, color: '#cf1322' }}
+                valueStyle={{ fontSize: 14, fontWeight: 600, color: token.colorError }}
               />
             </Col>
           </Row>

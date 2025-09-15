@@ -110,23 +110,42 @@ export const SUBGROUP_CODE_TO_FIELD: Record<number, string> = {
   50: 'Rural'
 };
 
+/**
+ * Converts a hex color string to an RGBA array.
+ * @param hex The hex color string (e.g., "#RRGGBB").
+ * @param alpha The alpha transparency value (0-1).
+ * @returns An array of numbers [r, g, b, a].
+ */
+const hexToRgbaArray = (hex: string, alpha: number = 1): number[] => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) {
+    return [128, 128, 128, 0.5]; // Fallback for invalid hex
+  }
+  return [
+    parseInt(result[1], 16),
+    parseInt(result[2], 16),
+    parseInt(result[3], 16),
+    alpha,
+  ];
+};
+
 // Renderer configuration
 export const RENDERER_CONFIG = {
   use5ClassRenderers: true,
-  colors: {
+  getThemeAwareColors: (token: any, alpha: number = 0.8) => ({
     fiveClass: {
-      veryGood: [0, 128, 0, 0.8],
-      good: [144, 238, 144, 0.8],
-      fair: [255, 255, 0, 0.8],
-      poor: [255, 165, 0, 0.8],
-      veryPoor: [255, 0, 0, 0.8]
+      veryGood: hexToRgbaArray(token.colorSuccess, alpha),
+      good: hexToRgbaArray(token.green4, alpha),
+      fair: hexToRgbaArray(token.colorWarning, alpha),
+      poor: hexToRgbaArray(token.orange5, alpha),
+      veryPoor: hexToRgbaArray(token.colorError, alpha),
     },
     threeClass: {
-      good: [76, 175, 80, 0.9],
-      fair: [255, 193, 7, 0.9],
-      poor: [244, 67, 54, 0.9]
-    }
-  },
+      good: hexToRgbaArray(token.colorSuccess, alpha),
+      fair: hexToRgbaArray(token.colorWarning, alpha),
+      poor: hexToRgbaArray(token.colorError, alpha),
+    },
+  }),
   lineWidth: 4
 };
 

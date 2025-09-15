@@ -666,7 +666,7 @@ const useAppStore = create<AppState>()(
         
         updateRenderer: () => {
           const state = get();
-          const { roadLayer, activeKpi } = state;
+          const { roadLayer, activeKpi, themeMode } = state;
           
           if (!roadLayer) {
             console.warn('Cannot update renderer: road layer not loaded');
@@ -677,7 +677,7 @@ const useAppStore = create<AppState>()(
           const year = validatedFilters.year[0];
           
           try {
-            const renderer = RendererService.createKPIRenderer(activeKpi, year);
+            const renderer = RendererService.createKPIRenderer(activeKpi, year, themeMode);
             (roadLayer as any).renderer = renderer;
             
             if (state.roadLayerSwipe) {

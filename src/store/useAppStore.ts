@@ -19,6 +19,13 @@ import StatisticsService from '@/services/StatisticsService';
 import RendererService from '@/services/RendererService';
 import type { FilterState, SummaryStatistics } from '@/types';
 
+interface ChartSelection {
+  group: string;
+  condition: string;
+  kpi: KPIKey;
+  year: number;
+}
+
 type ThemeMode = 'light' | 'dark';
 
 interface AppState {
@@ -54,6 +61,12 @@ interface AppState {
   currentFilters: FilterState;
   currentStats: SummaryStatistics | null;
   appliedFiltersCount: number;
+  // ADD THESE:
+  chartSelections: ChartSelection[];
+  isChartFilterActive: boolean;
+  // ADD THESE:
+  chartFilteredStats: SummaryStatistics | null;
+  isCalculatingChartStats: boolean;
 
   // Actions
   initializeMap: (containerId: string) => Promise<void>;
@@ -75,6 +88,15 @@ interface AppState {
   calculateStatistics: () => Promise<void>;
   updateRenderer: () => void;
   validateAndFixFilters: () => FilterState;
+  
+  // ADD THIS:
+  calculateChartFilteredStatistics: () => Promise<void>;
+
+  // ADD THESE:
+  addChartSelection: (selection: ChartSelection) => void;
+  removeChartSelection: (selection: ChartSelection) => void;
+  clearChartSelections: () => void;
+  toggleChartSelection: (selection: ChartSelection, isMultiSelect: boolean) => void;
 
   // New actions for Task 13
   setCurrentPage: (page: 'overview' | 'condition-summary') => void;
@@ -127,6 +149,14 @@ const useAppStore = create<AppState>()(
         currentFilters: initialFilters,
         currentStats: null,
         appliedFiltersCount: 0,
+        
+        // ADD THESE:
+        chartSelections: [],
+        isChartFilterActive: false,
+        
+        // ADD THESE:
+        chartFilteredStats: null,
+        isCalculatingChartStats: false,
 
         setError: (err) => set({ error: err }),
         setThemeMode: (mode) => set({ themeMode: mode }),
@@ -661,6 +691,123 @@ const useAppStore = create<AppState>()(
             console.error('Error updating renderer:', error);
             message.error('Failed to update map visualization');
           }
+        },
+
+        // ADD THIS NEW METHOD:
+        calculateChartFilteredStatistics: async () => {
+          const state = get();
+          const { roadLayer, chartSelections, currentFilters } = state;
+
+          if (!roadLayer || chartSelections.length === 0) {
+            set({ 
+              chartFilteredStats: null,
+              isCalculatingChartStats: false 
+            });
+            return;
+          }
+
+          set({ isCalculatingChartStats: true });
+
+          try {
+            console.log('[Chart Stats] Calculating for selections:', chartSelections);
+            
+            const stats = await StatisticsService.computeChartFilteredStatistics(
+              roadLayer, 
+              chartSelections, 
+              currentFilters
+            );
+            
+            set({ 
+              chartFilteredStats: stats,
+              isCalculatingChartStats: false 
+            });
+            
+            console.log('[Chart Stats] Calculated:', stats);
+            
+          } catch (error) {
+            console.error('Error calculating chart-filtered statistics:', error);
+            set({ 
+              chartFilteredStats: null,
+              isCalculatingChartStats: false 
+            });
+          }
+        },
+
+        // ADD THESE NEW METHODS:
+        addChartSelection: (selection) => {
+          const state = get();
+          const exists = state.chartSelections.some(s => 
+            s.group === selection.group && 
+            s.condition === selection.condition &&
+            s.kpi === selection.kpi &&
+            s.year === selection.year
+          );
+          
+          if (!exists) {
+            set({
+              chartSelections: [...state.chartSelections, selection],
+              isChartFilterActive: true
+            });
+            console.log('[Chart Selection] Added:', selection);
+          }
+        },
+
+        removeChartSelection: (selection) => {
+          const state = get();
+          const filtered = state.chartSelections.filter(s => !(
+            s.group === selection.group && 
+            s.condition === selection.condition &&
+            s.kpi === selection.kpi &&
+            s.year === selection.year
+          ));
+          
+          set({
+            chartSelections: filtered,
+            isChartFilterActive: filtered.length > 0
+          });
+          console.log('[Chart Selection] Removed:', selection);
+        },
+
+        clearChartSelections: () => {
+          set({
+            chartSelections: [],
+            isChartFilterActive: false,
+            chartFilteredStats: null // ADD: Clear chart stats
+          });
+          console.log('[Chart Selection] Cleared all selections');
+        },
+
+        toggleChartSelection: (selection, isMultiSelect) => {
+          const state = get();
+          const exists = state.chartSelections.some(s => 
+            s.group === selection.group && 
+            s.condition === selection.condition &&
+            s.kpi === selection.kpi &&
+            s.year === selection.year
+          );
+
+          if (isMultiSelect) {
+            if (exists) {
+              state.removeChartSelection(selection);
+            } else {
+              state.addChartSelection(selection);
+            }
+          } else {
+            if (exists && state.chartSelections.length === 1) {
+              state.clearChartSelections();
+            } else {
+              set({
+                chartSelections: [selection],
+                isChartFilterActive: true
+              });
+              console.log('[Chart Selection] Replaced with:', selection);
+            }
+          }
+          
+          // ADD: Auto-calculate chart statistics after selection change
+          setTimeout(() => {
+            state.calculateChartFilteredStatistics();
+          }, 100);
         }
       }),
       { 

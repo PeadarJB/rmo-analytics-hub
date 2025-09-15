@@ -9,6 +9,13 @@ import {
 } from '@/config/appConfig';
 import type { FilterState, SummaryStatistics, KPIStats, GroupedConditionStats } from '@/types';
 
+interface ChartSelection {
+  group: string;
+  condition: string;
+  kpi: KPIKey;
+  year: number;
+}
+
 /**
  * Service for computing pavement condition statistics.
  * Uses centralized thresholds from appConfig and optimized queries.
@@ -611,6 +618,278 @@ export default class StatisticsService {
         veryPoorPct: 0
       }],
       lastUpdated: new Date()
+    };
+  }
+
+  /**
+   * Compute statistics for chart-filtered selections
+   * Combines multiple chart selections into a single statistics result
+   */
+  static async computeChartFilteredStatistics(
+    layer: FeatureLayer | null,
+    chartSelections: ChartSelection[],
+    baseFilters: FilterState
+  ): Promise<SummaryStatistics> {
+    if (!layer || chartSelections.length === 0) {
+      return this.getEmptyStats('iri'); // Default empty stats
+    }
+
+    console.log('[Chart Stats] Computing for selections:', chartSelections);
+
+    try {
+      // Group selections by KPI and year for efficient querying
+      const groupedSelections = new Map<string, ChartSelection[]>();
+      chartSelections.forEach(selection => {
+        const key = `${selection.kpi}_${selection.year}`;
+        if (!groupedSelections.has(key)) {
+          groupedSelections.set(key, []);
+        }
+        groupedSelections.get(key)!.push(selection);
+      });
+
+      // Process each KPI/year group and combine results
+      const allResults: Array<{
+        kpi: KPIKey;
+        year: number;
+        totalSegments: number;
+        totalLengthKm: number;
+        stats: any;
+      }> = [];
+
+      for (const [key, selections] of groupedSelections) {
+        const [kpi, yearStr] = key.split('_');
+        const year = parseInt(yearStr, 10);
+        
+        const result = await this.processChartSelectionGroup(
+          layer, 
+          selections, 
+          kpi as KPIKey, 
+          year, 
+          baseFilters
+        );
+        
+        if (result) {
+          allResults.push(result);
+        }
+      }
+
+      // Aggregate all results
+      return this.aggregateChartResults(allResults, chartSelections);
+
+    } catch (error) {
+      console.error('Error computing chart-filtered statistics:', error);
+      return this.getEmptyStats(chartSelections[0]?.kpi || 'iri');
+    }
+  }
+
+  /**
+   * Process a group of chart selections for the same KPI/year
+   */
+  private static async processChartSelectionGroup(
+    layer: FeatureLayer,
+    selections: ChartSelection[],
+    kpi: KPIKey,
+    year: number,
+    baseFilters: FilterState
+  ): Promise<any> {
+    const kpiField = getKPIFieldName(kpi, year);
+    
+    // Build WHERE clauses for each selection
+    const selectionClauses = selections.map(selection => {
+      const groupClause = this.buildGroupWhereClause(selection.group);
+      const conditionClause = StatisticsService.buildConditionWhereClause(kpiField, kpi, selection.condition);
+      return `(${groupClause} AND ${conditionClause})`;
+    });
+
+    // Combine with OR (any of the selections)
+    const combinedWhere = `(${selectionClauses.join(' OR ')}) AND ${kpiField} IS NOT NULL`;
+    
+    console.log('[Chart Stats] Query WHERE:', combinedWhere);
+
+    // Execute the aggregated query
+    const results = await this.executeOptimizedQuery(layer, combinedWhere, kpiField, kpi);
+    
+    return {
+      kpi,
+      year,
+      totalSegments: results?.totalSegments || 0,
+      totalLengthKm: (results?.totalSegments || 0) * SEGMENT_LENGTH_METERS / 1000,
+      stats: results
+    };
+  }
+
+  /**
+   * Build WHERE clause for group filtering (handles subgroups)
+   */
+  private static buildGroupWhereClause(group: string): string {
+    // Handle subgroup categories
+    const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => 
+      opt.label === group
+    );
+    
+    if (subgroupOption) {
+      if (subgroupOption.value === 'Rural') {
+        return '(Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)';
+      } else {
+        return `${subgroupOption.value} = 1`;
+      }
+    }
+    
+    // Handle Local Authority or Route
+    if (group.includes('R') && group.length <= 5) {
+      // Likely a route
+      return `${CONFIG.fields.route} = '${group.replace("'", "''")}'`;
+    } else {
+      // Likely a Local Authority
+      return `${CONFIG.fields.la} = '${group.replace("'", "''")}'`;
+    }
+  }
+
+  /**
+   * Build WHERE clause for a specific condition class (5-class system)
+   */
+  private static buildConditionWhereClause(
+    kpiField: string,
+    kpi: KPIKey,
+    conditionClass: string
+  ): string {
+    const thresholds = KPI_THRESHOLDS[kpi];
+    
+    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
+      switch(conditionClass) {
+        case 'veryGood': 
+          return thresholds.veryGood ? `${kpiField} < ${thresholds.veryGood}` : `${kpiField} < ${thresholds.good}`;
+        case 'good': 
+          return thresholds.veryGood 
+            ? `${kpiField} >= ${thresholds.veryGood} AND ${kpiField} < ${thresholds.good}`
+            : `${kpiField} >= ${thresholds.good} AND ${kpiField} < ${thresholds.fair}`;
+        case 'fair': 
+          return `${kpiField} >= ${thresholds.good} AND ${kpiField} < ${thresholds.fair}`;
+        case 'poor': 
+          return thresholds.poor 
+            ? `${kpiField} >= ${thresholds.fair} AND ${kpiField} < ${thresholds.poor}`
+            : `${kpiField} >= ${thresholds.fair}`;
+        case 'veryPoor': 
+          return thresholds.poor ? `${kpiField} >= ${thresholds.poor}` : `${kpiField} >= ${thresholds.fair}`;
+        default: 
+          return '1=1';
+      }
+    } else if (kpi === 'csc') {
+      // CSC is inverted (higher is better)
+      switch(conditionClass) {
+        case 'veryGood': 
+          return `${kpiField} > ${thresholds.good}`;
+        case 'good': 
+          return `${kpiField} > ${thresholds.fair} AND ${kpiField} <= ${thresholds.good}`;
+        case 'fair': 
+          return `${kpiField} > ${thresholds.poor!} AND ${kpiField} <= ${thresholds.fair}`;
+        case 'poor': 
+          return `${kpiField} > ${thresholds.veryPoor!} AND ${kpiField} <= ${thresholds.poor!}`;
+        case 'veryPoor': 
+          return `${kpiField} <= ${thresholds.veryPoor!}`;
+        default: 
+          return '1=1';
+      }
+    } else if (kpi === 'psci') {
+      switch(conditionClass) {
+        case 'veryGood': return `${kpiField} > 8`;
+        case 'good': return `${kpiField} > 6 AND ${kpiField} <= 8`;
+        case 'fair': return `${kpiField} > 4 AND ${kpiField} <= 6`;
+        case 'poor': return `${kpiField} > 2 AND ${kpiField} <= 4`;
+        case 'veryPoor': return `${kpiField} <= 2`;
+        default: return '1=1';
+      }
+    } else if (kpi === 'mpd') {
+      switch(conditionClass) {
+        case 'veryGood': 
+        case 'good': 
+          return `${kpiField} >= ${thresholds.good}`;
+        case 'fair': 
+          return `${kpiField} >= ${thresholds.poor!} AND ${kpiField} < ${thresholds.good}`;
+        case 'poor': 
+        case 'veryPoor': 
+          return `${kpiField} < ${thresholds.poor!}`;
+        default: 
+          return '1=1';
+      }
+    }
+    
+    return '1=1';
+  }
+
+  /**
+   * Aggregate results from multiple KPI/year groups
+   */
+  private static aggregateChartResults(
+    results: Array<any>,
+    chartSelections: ChartSelection[]
+  ): SummaryStatistics {
+    if (results.length === 0) {
+      return this.getEmptyStats(chartSelections[0]?.kpi || 'iri');
+    }
+
+    // For simplicity, use the most common KPI from selections
+    const kpiCounts = new Map<KPIKey, number>();
+    chartSelections.forEach(sel => {
+      kpiCounts.set(sel.kpi, (kpiCounts.get(sel.kpi) || 0) + 1);
+    });
+    
+    const primaryKpi = Array.from(kpiCounts.entries())
+      .sort((a, b) => b[1] - a[1])[0][0];
+
+    // Sum up totals across all results
+    const totalSegments = results.reduce((sum, r) => sum + r.totalSegments, 0);
+    const totalLengthKm = results.reduce((sum, r) => sum + r.totalLengthKm, 0);
+
+    // Find primary KPI stats for detailed breakdown
+    const primaryResult = results.find(r => r.kpi === primaryKpi);
+    const stats = primaryResult?.stats || this.getEmptyQueryResult();
+
+    // Calculate percentages
+    const total = stats.veryGoodCount + stats.goodCount + stats.fairCount + 
+                  stats.poorCount + stats.veryPoorCount;
+    
+    const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+
+    const kpiStats: KPIStats = {
+      metric: primaryKpi.toUpperCase(),
+      average: stats.avgValue || 0,
+      min: stats.minValue || 0,
+      max: stats.maxValue || 0,
+      veryGoodCount: stats.veryGoodCount || 0,
+      goodCount: stats.goodCount || 0,
+      fairCount: stats.fairCount || 0,
+      poorCount: stats.poorCount || 0,
+      veryPoorCount: stats.veryPoorCount || 0,
+      veryGoodPct: Math.round(pct(stats.veryGoodCount || 0) * 10) / 10,
+      goodPct: Math.round(pct(stats.goodCount || 0) * 10) / 10,
+      fairPct: Math.round(pct(stats.fairCount || 0) * 10) / 10,
+      poorPct: Math.round(pct(stats.poorCount || 0) * 10) / 10,
+      veryPoorPct: Math.round(pct(stats.veryPoorCount || 0) * 10) / 10
+    };
+
+    return {
+      totalSegments,
+      totalLengthKm: Math.round(totalLengthKm * 10) / 10,
+      metrics: [kpiStats],
+      lastUpdated: new Date()
+    };
+  }
+
+  /**
+   * Get empty query result structure
+   */
+  private static getEmptyQueryResult(): any {
+    return {
+      avgValue: 0,
+      minValue: 0,
+      maxValue: 0,
+      totalSegments: 0,
+      veryGoodCount: 0,
+      goodCount: 0,
+      fairCount: 0,
+      poorCount: 0,
+      veryPoorCount: 0
     };
   }
 }

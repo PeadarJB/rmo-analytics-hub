@@ -1,3 +1,35 @@
 html, body, #root { height: 100%; margin: 0; }
 #viewDiv { height: 100%; width: 100%; }
 * { box-sizing: border-box; }
+
+/* ADD THESE STYLES FOR ARCGIS SWIPE WIDGET */
+.esri-swipe__divider {
+  background-color: #fff !important;
+  border: 2px solid #333 !important;
+  cursor: ew-resize !important;
+  z-index: 999 !important;
+}
+
+.esri-swipe__divider--horizontal {
+  cursor: ew-resize !important;
+}
+
+.esri-swipe__divider--vertical {
+  cursor: ns-resize !important;
+}
+
+/* Ensure swipe handle is visible */
+.esri-swipe__handle {
+  background-color: #fff !important;
+  border: 2px solid #333 !important;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 50% !important;
+  z-index: 1000 !important;
+}
+
+/* Fix for condition summary page map container */
+#conditionViewDiv { 
+  height: 100%; 
+  width: 100%; 
+}

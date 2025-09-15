@@ -9,7 +9,8 @@ import {
   CONFIG, 
   KPI_LABELS, 
   KPIKey,
-  SUBGROUP_CODE_TO_FIELD,
+  LA_LAYER_CONFIG,
+  SUBGROUP_CODE_TO_FIELD, 
   SubgroupOption 
 } from '@/config/appConfig';
 import MapViewService from '@/services/MapViewService';
@@ -29,7 +30,7 @@ interface AppState {
   initialExtent: Extent | null;
   error: string | null;
   preSwipeDefinitionExpression: string | null;
-  mapInitialized: boolean; // Add flag to track initialization status
+  mapInitialized: boolean;
 
   // Swipe / LA polygon layers
   laPolygonLayers: Map<string, FeatureLayer> | null;
@@ -69,7 +70,7 @@ interface AppState {
 
   setActiveKpi: (k: KPIKey) => void;
   setFilters: (f: Partial<FilterState>) => void;
-  clearAllFilters: () => void;
+  clearAllFilters: () => Promise<void>;
   applyFilters: () => Promise<void>;
   calculateStatistics: () => Promise<void>;
   updateRenderer: () => void;
@@ -79,6 +80,10 @@ interface AppState {
   setCurrentPage: (page: 'overview' | 'condition-summary') => void;
   setSwipeYears: (left: number, right: number) => void;
   updateLALayerVisibility: () => void;
+  
+  // ADD THESE TWO MISSING METHOD DECLARATIONS:
+  enterSwipeMode: () => void;
+  exitSwipeMode: () => void;
 }
 
 const initialFilters: FilterState = {
@@ -151,10 +156,14 @@ const useAppStore = create<AppState>()(
         updateLALayerVisibility: () => {
           const { laPolygonLayers, activeKpi, leftSwipeYear, rightSwipeYear, currentPage } = get();
           if (!laPolygonLayers || currentPage !== 'condition-summary') return;
-
-          const leftLayerName = `LA_${activeKpi.toUpperCase()}_${leftSwipeYear}`;
-          const rightLayerName = `LA_${activeKpi.toUpperCase()}_${rightSwipeYear}`;
-
+        
+          // Use the LA_LAYER_CONFIG to generate the correct layer names
+          const leftLayerName = LA_LAYER_CONFIG.layerTitlePattern(activeKpi, leftSwipeYear);
+          const rightLayerName = LA_LAYER_CONFIG.layerTitlePattern(activeKpi, rightSwipeYear);
+        
+          console.log('Looking for layers:', leftLayerName, rightLayerName);
+          console.log('Available layers:', Array.from(laPolygonLayers.keys()));
+        
           laPolygonLayers.forEach((layer, name) => {
             layer.visible = (name === leftLayerName || name === rightLayerName);
           });
@@ -405,11 +414,17 @@ const useAppStore = create<AppState>()(
             // Task 13: Find and store LA polygon layers
             const laLayers = new Map<string, FeatureLayer>();
             webmap.allLayers.forEach((layer: any) => {
-              if (layer.title && typeof layer.title === 'string' && layer.title.startsWith('LA_')) {
-                laLayers.set(layer.title, layer as FeatureLayer);
-                (layer as FeatureLayer).visible = false; // Hide all initially
+              if (layer.title && typeof layer.title === 'string') {
+                // Check if this is an Average KPI layer (e.g., "Average IRI 2018")
+                if (layer.title.startsWith('Average ')) {
+                  console.log('Found LA polygon layer:', layer.title);
+                  laLayers.set(layer.title, layer as FeatureLayer);
+                  (layer as FeatureLayer).visible = false; // Hide all initially
+                }
               }
             });
+            
+            console.log(`Found ${laLayers.size} LA polygon layers`);
             set({ laPolygonLayers: laLayers });
             
             if (!road) {

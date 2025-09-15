@@ -21,13 +21,14 @@ const ConditionSummaryPage: React.FC = () => {
     updateLALayerVisibility,
     laPolygonLayers,
     leftSwipeYear,
-    rightSwipeYear
+    rightSwipeYear,
+    roadLayer,
+    roadLayerSwipe
   } = useAppStore();
 
   const { styles } = usePanelStyles();
   const { token } = theme.useToken();
 
-  // TO:
   useEffect(() => {
     // Initialize map if not already done
     const container = document.getElementById('conditionViewDiv');
@@ -35,24 +36,49 @@ const ConditionSummaryPage: React.FC = () => {
       initializeMap('conditionViewDiv');
     }
     
-    // Hide road network layer for this page
-    const { hideRoadNetworkForSwipe } = useAppStore.getState();
-    hideRoadNetworkForSwipe();
+    // Hide road network layers for this page
+    const hideRoadLayers = () => {
+      const state = useAppStore.getState();
+      if (state.roadLayer) {
+        state.roadLayer.visible = false;
+        console.log('Road layer hidden');
+      }
+      if (state.roadLayerSwipe) {
+        state.roadLayerSwipe.visible = false;
+        console.log('Road layer swipe hidden');
+      }
+    };
+    
+    // Hide immediately
+    hideRoadLayers();
+    
+    // Also hide after a delay to ensure the layers are loaded
+    const timer = setTimeout(hideRoadLayers, 1000);
     
     // Update LA layer visibility when page loads
     updateLALayerVisibility();
     
     // Cleanup: restore road layer visibility when leaving page
     return () => {
-      const { restoreRoadNetworkVisibility } = useAppStore.getState();
-      restoreRoadNetworkVisibility();
+      clearTimeout(timer);
+      const state = useAppStore.getState();
+      if (state.roadLayer) {
+        state.roadLayer.visible = true;
+      }
+      if (state.roadLayerSwipe) {
+        state.roadLayerSwipe.visible = true;
+      }
     };
-  }, []);
+  }, [initializeMap, updateLALayerVisibility]);
 
   // Update visibility when KPI changes
   useEffect(() => {
     updateLALayerVisibility();
-  }, [activeKpi]);
+    
+    // Ensure road layers stay hidden when KPI changes
+    if (roadLayer) roadLayer.visible = false;
+    if (roadLayerSwipe) roadLayerSwipe.visible = false;
+  }, [activeKpi, roadLayer, roadLayerSwipe, updateLALayerVisibility]);
 
   const headerControls = (
     <div className={styles.headerRight}>

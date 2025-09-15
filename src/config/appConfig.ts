@@ -21,15 +21,23 @@ export const KPI_LABELS: Record<KPIKey, string> = {
 export const LA_LAYER_CONFIG = {
   // Primary pattern for finding LA layers
   layerTitlePattern: (kpi: string, year: number) => {
-    const kpiUpper = kpi.toUpperCase();
-    const displayKpi = kpiUpper === 'LPV3' ? 'LPV' : kpiUpper;
+    // Map KPI keys to the exact names used in the layers
+    const kpiNameMap: Record<string, string> = {
+      'iri': 'IRI',
+      'rut': 'RUT',
+      'psci': 'PSCI',
+      'csc': 'CSC',
+      'mpd': 'MPD',
+      'lpv3': 'LPV'  // Note: lpv3 maps to LPV
+    };
+    
+    const displayKpi = kpiNameMap[kpi.toLowerCase()] || kpi.toUpperCase();
     return `Average ${displayKpi} ${year}`;
   },
   // Alternative patterns to try if primary fails
   alternativePatterns: [
     (kpi: string, year: number) => `${year} Average ${kpi.toUpperCase()}`,
-    (kpi: string, year: number) => `LA ${kpi.toUpperCase()} ${year}`,
-    (kpi: string, year: number) => `${kpi.toUpperCase()} ${year} Average`
+    (kpi: string, year: number) => `Average ${kpi.toUpperCase()} ${year}`,
   ]
 };
 

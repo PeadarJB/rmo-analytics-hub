@@ -1,14 +1,14 @@
-// src/components/SimpleSwipePanel.tsx - Adapted for RMO Analytics Hub
+// src/components/SimpleSwipePanel.tsx - Fixed version for RMO
 
 import { useState, useEffect, useCallback, FC } from 'react';
-import { Card, Select, Button, Space, Slider, Radio, Tag, message, Tooltip, Divider, theme } from 'antd';
+import { Card, Select, Button, Space, Slider, Radio, Tag, message, Divider, theme } from 'antd';
 import { SwapOutlined, CloseOutlined } from '@ant-design/icons';
 import type { KPIKey } from '@/config/appConfig';
 
-// Store imports - Adapted for RMO App
+// Store imports
 import useAppStore from '@/store/useAppStore';
 
-// Style imports - Using existing RMO styles
+// Style imports
 import { usePanelStyles } from '@/styles/styled';
 
 // Type imports
@@ -16,7 +16,7 @@ import type Swipe from '@arcgis/core/widgets/Swipe';
 import type Layer from '@arcgis/core/layers/Layer';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 
-// Config imports - Adapted for RMO App
+// Config imports
 import { CONFIG, KPI_LABELS, LA_LAYER_CONFIG } from '@/config/appConfig';
 
 interface SimpleSwipePanelProps {}
@@ -28,6 +28,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   // Zustand state and actions from RMO store
   const {
     mapView: view,
+    webmap,
     isSwipeActive,
     activeKpi,
     laPolygonLayers,
@@ -57,7 +58,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       });
       view.ui.remove(swipeWidget);
       swipeWidget.destroy();
-      exitSwipeMode(); // Restore previous filter state if any
+      exitSwipeMode();
       setSwipeWidget(null);
       useAppStore.setState({ isSwipeActive: false });
       message.info('Layer comparison deactivated');
@@ -70,55 +71,103 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   }, [stopSwipe]);
   
   /**
-   * Finds a specific LA polygon layer from the store's Map object.
-   * This is more efficient than searching all webmap layers.
+   * Finds a specific LA polygon layer from the store's Map object or webmap.
    */
   const findLayer = (kpi: KPIKey, year: number): FeatureLayer | undefined => {
-    if (!laPolygonLayers) return undefined;
     const layerTitle = LA_LAYER_CONFIG.layerTitlePattern(kpi, year);
-    return laPolygonLayers.get(layerTitle);
+    console.log(`Looking for layer: "${layerTitle}"`);
+    
+    // First try from the cached laPolygonLayers
+    if (laPolygonLayers) {
+      const layer = laPolygonLayers.get(layerTitle);
+      if (layer) {
+        console.log(`Found layer in cache: ${layerTitle}`);
+        return layer;
+      }
+    }
+    
+    // If not in cache, search in webmap
+    if (webmap) {
+      const layer = webmap.allLayers.find((l: any) => l.title === layerTitle) as FeatureLayer | undefined;
+      if (layer) {
+        console.log(`Found layer in webmap: ${layerTitle}`);
+        return layer;
+      }
+    }
+    
+    console.warn(`Layer not found: ${layerTitle}`);
+    console.log('Available layers:', laPolygonLayers ? Array.from(laPolygonLayers.keys()) : 'No cached layers');
+    return undefined;
   };
 
   /**
    * Initializes and starts the ArcGIS Swipe widget.
    */
   const startSwipe = async () => {
-    if (!view || !laPolygonLayers) {
-      message.error("Map or LA layers are not ready. Please try again.");
+    if (!view || !webmap) {
+      message.error("Map is not ready. Please try again.");
       return;
     }
 
     try {
-      enterSwipeMode(); // Save current road layer filters
+      enterSwipeMode();
 
       const leftLayer = findLayer(activeKpi, leftYear);
-      const rightLayer = findLayer(rightYear === leftYear ? activeKpi : activeKpi, rightYear);
+      const rightLayer = findLayer(activeKpi, rightYear);
 
       if (!leftLayer || !rightLayer) {
-        message.error(`Could not find comparison layers for ${KPI_LABELS[activeKpi]} in ${leftYear} vs ${rightYear}.`);
+        message.error(`Could not find comparison layers for ${KPI_LABELS[activeKpi]}`);
+        console.error('Missing layers:', {
+          leftLayer: leftLayer ? 'found' : `NOT FOUND (${LA_LAYER_CONFIG.layerTitlePattern(activeKpi, leftYear)})`,
+          rightLayer: rightLayer ? 'found' : `NOT FOUND (${LA_LAYER_CONFIG.layerTitlePattern(activeKpi, rightYear)})`
+        });
         exitSwipeMode();
         return;
       }
       
-      // Ensure only these two layers are visible
-      laPolygonLayers.forEach(layer => {
-        layer.visible = (layer === leftLayer || layer === rightLayer);
-      });
+      // Hide all LA layers first
+      if (laPolygonLayers) {
+        laPolygonLayers.forEach(layer => {
+          layer.visible = false;
+        });
+      }
+      
+      // Make only the swipe layers visible
+      leftLayer.visible = true;
+      rightLayer.visible = true;
 
-      const SwipeWidget = (await import('@arcgis/core/widgets/Swipe')).default;
+      // Dynamically import and create swipe widget
+      const SwipeModule = await import('@arcgis/core/widgets/Swipe');
+      const SwipeWidget = SwipeModule.default;
+      
       const swipe = new SwipeWidget({
         view: view,
         leadingLayers: [leftLayer],
         trailingLayers: [rightLayer],
         direction: direction,
         position: position,
+        // Ensure the widget is enabled
+        disabled: false
       });
 
+      // Add to the view UI
       view.ui.add(swipe);
+      
+      // Store reference
       setSwipeWidget(swipe);
       useAppStore.setState({ isSwipeActive: true });
-      setSwipeYears(leftYear, rightYear); // Update global state
+      setSwipeYears(leftYear, rightYear);
+      
       message.success('Layer comparison activated');
+      
+      // Log for debugging
+      console.log('Swipe widget created:', {
+        leadingLayer: leftLayer.title,
+        trailingLayer: rightLayer.title,
+        direction,
+        position
+      });
+      
     } catch (error) {
       console.error('Failed to create swipe:', error);
       message.error('Failed to activate layer comparison');
@@ -126,26 +175,50 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
     }
   };
   
-  // Effect to auto-restart swipe if the active KPI changes
+  // Effect to auto-restart swipe if the active KPI changes while active
   useEffect(() => {
-    if (isSwipeActive) {
-      // A brief delay to allow state updates to settle before restarting
-      const timer = setTimeout(() => {
-        stopSwipe();
-        void startSwipe();
-      }, 100);
-      return () => clearTimeout(timer);
+    if (isSwipeActive && swipeWidget) {
+      // Update the layers when KPI changes
+      const updateSwipeLayers = async () => {
+        const leftLayer = findLayer(activeKpi, leftYear);
+        const rightLayer = findLayer(activeKpi, rightYear);
+        
+        if (leftLayer && rightLayer && swipeWidget) {
+          // Hide all LA layers
+          if (laPolygonLayers) {
+            laPolygonLayers.forEach(layer => {
+              layer.visible = false;
+            });
+          }
+          
+          // Update swipe widget layers
+          swipeWidget.leadingLayers.removeAll();
+          swipeWidget.trailingLayers.removeAll();
+          swipeWidget.leadingLayers.add(leftLayer);
+          swipeWidget.trailingLayers.add(rightLayer);
+          
+          // Make layers visible
+          leftLayer.visible = true;
+          rightLayer.visible = true;
+        }
+      };
+      
+      updateSwipeLayers();
     }
-  }, [activeKpi]);
+  }, [activeKpi, isSwipeActive, swipeWidget, leftYear, rightYear, laPolygonLayers]);
 
   const updatePosition = (value: number) => {
     setPosition(value);
-    if (swipeWidget) swipeWidget.position = value;
+    if (swipeWidget) {
+      swipeWidget.position = value;
+    }
   };
 
   const updateDirection = (value: 'horizontal' | 'vertical') => {
     setDirection(value);
-    if (swipeWidget) swipeWidget.direction = value;
+    if (swipeWidget) {
+      swipeWidget.direction = value;
+    }
   };
   
   const handleClose = () => {
@@ -182,7 +255,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
     >
       <Space direction="vertical" style={{ width: '100%' }}>
         
-        {/* --- RMO-Specific Year Selection Controls --- */}
+        {/* Year Selection Controls */}
         <div>
           <label style={{ 
             display: 'block', 
@@ -200,6 +273,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
             disabled={isSwipeActive}
           />
         </div>
+        
         <div>
           <label style={{ 
             display: 'block', 
@@ -220,7 +294,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
 
         <Divider style={{ margin: '8px 0' }} />
         
-        {/* --- Generic Swipe Controls --- */}
+        {/* Swipe Controls */}
         <div>
           <label style={{ 
             display: 'block', 

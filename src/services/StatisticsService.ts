@@ -7,7 +7,7 @@ import {
   getKPIFieldName,
   SEGMENT_LENGTH_METERS
 } from '@/config/appConfig';
-import type { FilterState, SummaryStatistics, KPIStats } from '@/types';
+import type { FilterState, SummaryStatistics, KPIStats, GroupedConditionStats } from '@/types';
 
 /**
  * Service for computing pavement condition statistics.
@@ -425,6 +425,96 @@ export default class StatisticsService {
   }
 
   /**
+   * Compute grouped statistics with condition class breakdowns
+   * Returns data suitable for stacked bar charts
+   */
+  static async computeGroupedStatisticsWithConditions(
+    layer: FeatureLayer | null,
+    filters: FilterState,
+    activeKpi: KPIKey,
+    groupByField: string
+  ): Promise<GroupedConditionStats[]> {
+    if (!layer) {
+      return this.getPlaceholderGroupedConditionStats(groupByField);
+    }
+
+    try {
+      const year = filters.year.length > 0 ? filters.year[0] : CONFIG.defaultYears[0];
+      const kpiField = getKPIFieldName(activeKpi, year);
+      const baseWhere = (layer as any).definitionExpression || '1=1';
+      const whereClause = `(${baseWhere}) AND ${kpiField} IS NOT NULL`;
+
+      // Get unique groups first
+      const groupQuery = layer.createQuery();
+      groupQuery.where = whereClause;
+      groupQuery.returnDistinctValues = true;
+      groupQuery.outFields = [groupByField];
+      groupQuery.returnGeometry = false;
+      
+      const groupResult = await layer.queryFeatures(groupQuery);
+      const groups = groupResult.features.map(f => f.attributes[groupByField]).filter(g => g != null);
+
+      // For each group, calculate condition breakdowns
+      const groupedStats = await Promise.all(groups.map(async (groupValue) => {
+        const groupWhere = `${whereClause} AND ${groupByField} = '${groupValue.replace(/'/g, "''")}'`;
+        
+        // Build condition expressions for this KPI
+        const conditionExpressions = this.buildConditionExpressions(kpiField, activeKpi, KPI_THRESHOLDS[activeKpi]);
+        
+        // Query for condition counts
+        const statsQuery = layer.createQuery();
+        statsQuery.where = groupWhere;
+        statsQuery.returnGeometry = false;
+        statsQuery.outStatistics = [
+          { onStatisticField: kpiField, outStatisticFieldName: 'avg_value', statisticType: 'avg' },
+          { onStatisticField: kpiField, outStatisticFieldName: 'total_count', statisticType: 'count' },
+          { onStatisticField: conditionExpressions.veryGood, outStatisticFieldName: 'very_good_count', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.good, outStatisticFieldName: 'good_count', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.fair, outStatisticFieldName: 'fair_count', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.poor, outStatisticFieldName: 'poor_count', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.veryPoor, outStatisticFieldName: 'very_poor_count', statisticType: 'sum' }
+        ] as any;
+
+        const result = await layer.queryFeatures(statsQuery);
+        const stats = result.features[0]?.attributes || {};
+        
+        const total = stats.total_count || 0;
+        
+        return {
+          group: groupValue,
+          avgValue: stats.avg_value || 0,
+          totalCount: total,
+          conditions: {
+            veryGood: { count: stats.very_good_count || 0, percentage: 0 },
+            good: { count: stats.good_count || 0, percentage: 0 },
+            fair: { count: stats.fair_count || 0, percentage: 0 },
+            poor: { count: stats.poor_count || 0, percentage: 0 },
+            veryPoor: { count: stats.very_poor_count || 0, percentage: 0 }
+          }
+        };
+      }));
+
+      // Calculate percentages
+      groupedStats.forEach(stat => {
+        const total = stat.totalCount;
+        if (total > 0) {
+          stat.conditions.veryGood.percentage = (stat.conditions.veryGood.count / total) * 100;
+          stat.conditions.good.percentage = (stat.conditions.good.count / total) * 100;
+          stat.conditions.fair.percentage = (stat.conditions.fair.count / total) * 100;
+          stat.conditions.poor.percentage = (stat.conditions.poor.count / total) * 100;
+          stat.conditions.veryPoor.percentage = (stat.conditions.veryPoor.count / total) * 100;
+        }
+      });
+
+      return groupedStats;
+
+    } catch (error) {
+      console.error('Error computing grouped condition statistics:', error);
+      return this.getPlaceholderGroupedConditionStats(groupByField);
+    }
+  }
+
+  /**
    * Placeholder stats (now 5-class shape)
    */
   private static getPlaceholderStats(activeKpi: KPIKey): SummaryStatistics {
@@ -473,6 +563,25 @@ export default class StatisticsService {
       group: g,
       avgValue: Math.random() * 5 + 2,
       count: Math.floor(Math.random() * 50 + 10)
+    }));
+  }
+
+  private static getPlaceholderGroupedConditionStats(groupByField: string): GroupedConditionStats[] {
+    const groups = groupByField.includes('LA')
+      ? ['Dublin City', 'Cork County', 'Galway County', 'Limerick City']
+      : ['R123', 'R456', 'R750', 'R999'];
+
+    return groups.map(g => ({
+      group: g,
+      avgValue: Math.random() * 5 + 2,
+      totalCount: 100,
+      conditions: {
+        veryGood: { count: 20, percentage: 20 },
+        good: { count: 30, percentage: 30 },
+        fair: { count: 25, percentage: 25 },
+        poor: { count: 15, percentage: 15 },
+        veryPoor: { count: 10, percentage: 10 }
+      }
     }));
   }
 

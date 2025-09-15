@@ -32,3 +32,21 @@ export interface SummaryStatistics {
   metrics: KPIStats[];
   lastUpdated: Date;
 }
+
+export interface ConditionBreakdown {
+  count: number;
+  percentage: number;
+}
+
+export interface GroupedConditionStats {
+  group: string;
+  avgValue: number;
+  totalCount: number;
+  conditions: {
+    veryGood: ConditionBreakdown;
+    good: ConditionBreakdown;
+    fair: ConditionBreakdown;
+    poor: ConditionBreakdown;
+    veryPoor: ConditionBreakdown;
+  };
+}

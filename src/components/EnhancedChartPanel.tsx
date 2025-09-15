@@ -21,11 +21,11 @@ const EnhancedChartPanel: React.FC = () => {
     currentFilters, 
     mapView, 
     setFilters,
-    // ADD THESE:
     chartSelections,
     isChartFilterActive,
     toggleChartSelection,
-    clearChartSelections
+    clearChartSelections,
+    themeMode
   } = useAppStore();
   const { token } = theme.useToken();
   const chartRef = useRef<HTMLCanvasElement | null>(null);
@@ -41,11 +41,17 @@ const EnhancedChartPanel: React.FC = () => {
   const [dataStatus, setDataStatus] = useState<'loading' | 'success' | 'no-data' | 'error'>('loading');
   const [errorDetails, setErrorDetails] = useState<string>('');
 
+  // Get theme-aware colors
+  const themeColors = useMemo(() => 
+    RENDERER_CONFIG.getThemeAwareColors(token), 
+    [token]
+  );
+
   // Use store-based selections for highlighting
   const highlightedBars = useMemo(() => {
     const highlighted = new Set<string>();
     chartSelections
-      .filter(sel => sel.kpi === activeKpi) // Only highlight current KPI
+      .filter(sel => sel.kpi === activeKpi)
       .forEach(sel => {
         highlighted.add(`${sel.group}_${sel.condition}`);
       });
@@ -70,7 +76,6 @@ const EnhancedChartPanel: React.FC = () => {
         let data: GroupedConditionStats[];
         
         if (stackedMode) {
-          // Get detailed condition breakdowns for stacked chart
           data = await StatisticsService.computeGroupedStatisticsWithConditions(
             roadLayer,
             currentFilters,
@@ -78,7 +83,6 @@ const EnhancedChartPanel: React.FC = () => {
             groupBy
           );
         } else {
-          // Get simple averages for regular chart
           console.log('[Chart Debug] Fetching simple averages for:', {
             activeKpi,
             year: currentFilters.year[0] || CONFIG.defaultYears[0],
@@ -95,13 +99,12 @@ const EnhancedChartPanel: React.FC = () => {
           
           console.log('[Chart Debug] Raw QueryService result:', simpleData);
           
-          // Convert to GroupedConditionStats format
           data = simpleData.map(d => {
             console.log('[Chart Debug] Processing group:', d.group, 'avgValue:', d.avgValue, 'count:', d.count);
             return {
               group: d.group,
-              avgValue: d.avgValue || 0, // ADD DEFAULT VALUE
-              totalCount: d.count || 0,  // ADD DEFAULT VALUE
+              avgValue: d.avgValue || 0,
+              totalCount: d.count || 0,
               conditions: {
                 veryGood: { count: 0, percentage: 0 },
                 good: { count: 0, percentage: 0 },
@@ -115,10 +118,8 @@ const EnhancedChartPanel: React.FC = () => {
           console.log('[Chart Debug] Final converted data:', data);
         }
         
-        // Sort by average value
         data.sort((a, b) => b.avgValue - a.avgValue);
         
-        // Enhanced data validation
         if (!data || data.length === 0) {
           setDataStatus('no-data');
           setErrorDetails(`No ${groupByOptions.find(o => o.value === groupBy)?.label || groupBy} data available for ${KPI_LABELS[activeKpi]} in the current selection.`);
@@ -126,7 +127,6 @@ const EnhancedChartPanel: React.FC = () => {
           return;
         }
         
-        // Check if all values are zero/null
         const hasValidValues = stackedMode 
           ? data.some(d => d.totalCount > 0)
           : data.some(d => d.avgValue && d.avgValue > 0);
@@ -161,12 +161,10 @@ const EnhancedChartPanel: React.FC = () => {
     const datasetIndex = element.datasetIndex;
     const dataIndex = element.index;
     
-    // Get the clicked group and condition
     const clickedGroup = groupedData[dataIndex].group;
     const conditions = ['veryGood', 'good', 'fair', 'poor', 'veryPoor'];
     const clickedCondition = conditions[datasetIndex];
     
-    // Create selection object
     const selection = {
       group: clickedGroup,
       condition: clickedCondition,
@@ -174,7 +172,6 @@ const EnhancedChartPanel: React.FC = () => {
       year: currentFilters.year[0] || CONFIG.defaultYears[0]
     };
     
-    // Check for multi-select modifiers
     const isMultiSelect = event.native && (
       (event.native as any).ctrlKey || 
       (event.native as any).metaKey || 
@@ -187,10 +184,7 @@ const EnhancedChartPanel: React.FC = () => {
       currentSelections: chartSelections.length
     });
     
-    // Update selections in store
     toggleChartSelection(selection, isMultiSelect);
-    
-    // Apply map filtering based on all current selections
     await applyChartSelectionsToMap();
     
   }, [groupedData, roadLayer, mapView, activeKpi, currentFilters, toggleChartSelection, chartSelections]);
@@ -202,19 +196,16 @@ const EnhancedChartPanel: React.FC = () => {
     const selections = state.chartSelections;
     
     if (selections.length === 0) {
-      // No selections - restore previous state
       (roadLayer as any).definitionExpression = previousDefinitionExpression.current;
       setSelectedSegment(null);
       message.info('Chart filter cleared');
       return;
     }
     
-    // Build combined WHERE clause for all selections
     const whereClauses = selections.map(selection => {
       const year = selection.year;
       const kpiField = getKPIFieldName(selection.kpi, year);
       
-      // Build group filter
       let groupClause = '';
       if (groupBy === 'subgroup') {
         groupClause = buildSubgroupWhereClause(selection.group);
@@ -222,24 +213,19 @@ const EnhancedChartPanel: React.FC = () => {
         groupClause = `${groupBy} = '${selection.group.replace("'", "''")}'`;
       }
       
-      // Build condition filter
       const conditionClause = buildConditionWhereClause(kpiField, selection.kpi, selection.condition);
       
       return `(${groupClause} AND ${conditionClause})`;
     });
 
-    // Combine all selection clauses with OR
     let combinedWhere = whereClauses.join(' OR ');
     
-    // Add existing filters if any
     if (previousDefinitionExpression.current !== '1=1') {
       combinedWhere = `(${previousDefinitionExpression.current}) AND (${combinedWhere})`;
     }
 
-    // Apply to road layer
     (roadLayer as any).definitionExpression = combinedWhere;
     
-    // Zoom to filtered features
     try {
       const query = new Query({ where: combinedWhere, returnGeometry: false });
       const result = await roadLayer.queryExtent(query);
@@ -256,7 +242,6 @@ const EnhancedChartPanel: React.FC = () => {
     }
   }, [roadLayer, mapView, groupBy, previousDefinitionExpression]);
 
-  // Build subgroup where clause
   const buildSubgroupWhereClause = (subgroup: string): string => {
     const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => 
       opt.label === subgroup
@@ -272,7 +257,6 @@ const EnhancedChartPanel: React.FC = () => {
     return '1=1';
   };
 
-  // Build where clause for specific condition class
   const buildConditionWhereClause = (
     kpiField: string,
     kpi: KPIKey,
@@ -300,7 +284,6 @@ const EnhancedChartPanel: React.FC = () => {
           return '1=1';
       }
     } else if (kpi === 'csc') {
-      // CSC is inverted (higher is better)
       switch(conditionClass) {
         case 'veryGood': 
           return `${kpiField} > ${thresholds.good}`;
@@ -342,13 +325,34 @@ const EnhancedChartPanel: React.FC = () => {
     return '1=1';
   };
 
-  // Clear selection when filters change
   useEffect(() => {
     if (roadLayer) {
       previousDefinitionExpression.current = (roadLayer as any).definitionExpression || '1=1';
       setSelectedSegment(null);
     }
   }, [currentFilters]);
+
+  // Helper function to create chart colors with theme awareness
+  const createChartColors = (conditionType: keyof typeof themeColors.fiveClass, groupData: GroupedConditionStats[]) => {
+    const baseColor = themeColors.fiveClass[conditionType];
+    
+    return {
+      backgroundColor: groupData.map(d => {
+        const key = `${d.group}_${conditionType}`;
+        const opacity = highlightedBars.has(key) ? 1.0 : 0.8;
+        return `rgba(${baseColor.slice(0, 3).join(',')}, ${opacity})`;
+      }),
+      borderColor: groupData.map(d => {
+        const key = `${d.group}_${conditionType}`;
+        const opacity = highlightedBars.has(key) ? 1.0 : 0.6;
+        return `rgba(${baseColor.slice(0, 3).join(',')}, ${opacity})`;
+      }),
+      borderWidth: groupData.map(d => {
+        const key = `${d.group}_${conditionType}`;
+        return highlightedBars.has(key) ? 3 : 1;
+      })
+    };
+  };
 
   // Render chart
   useEffect(() => {
@@ -359,108 +363,34 @@ const EnhancedChartPanel: React.FC = () => {
     let datasets: any[];
     
     if (stackedMode) {
-      // Create stacked datasets for each condition class
-      const colors = RENDERER_CONFIG.colors.fiveClass;
-      
       datasets = [
         {
           label: 'Very Good',
           data: groupedData.map(d => d.conditions.veryGood.percentage),
-          backgroundColor: groupedData.map((d, index) => {
-            const key = `${d.group}_veryGood`;
-            const opacity = highlightedBars.has(key) ? 1.0 : 0.8;
-            return `rgba(${colors.veryGood.slice(0, 3).join(',')}, ${opacity})`;
-          }),
-          borderColor: groupedData.map((d, index) => {
-            const key = `${d.group}_veryGood`;
-            return highlightedBars.has(key) 
-              ? `rgba(${colors.veryGood.slice(0, 3).join(',')}, 1)`
-              : `rgba(${colors.veryGood.slice(0, 3).join(',')}, 0.6)`;
-          }),
-          borderWidth: groupedData.map((d, index) => {
-            const key = `${d.group}_veryGood`;
-            return highlightedBars.has(key) ? 3 : 1;
-          })
+          ...createChartColors('veryGood', groupedData)
         },
         {
           label: 'Good',
           data: groupedData.map(d => d.conditions.good.percentage),
-          backgroundColor: groupedData.map((d, index) => {
-            const key = `${d.group}_good`;
-            const opacity = highlightedBars.has(key) ? 1.0 : 0.8;
-            return `rgba(${colors.good.slice(0, 3).join(',')}, ${opacity})`;
-          }),
-          borderColor: groupedData.map((d, index) => {
-            const key = `${d.group}_good`;
-            return highlightedBars.has(key) 
-              ? `rgba(${colors.good.slice(0, 3).join(',')}, 1)`
-              : `rgba(${colors.good.slice(0, 3).join(',')}, 0.6)`;
-          }),
-          borderWidth: groupedData.map((d, index) => {
-            const key = `${d.group}_good`;
-            return highlightedBars.has(key) ? 3 : 1;
-          })
+          ...createChartColors('good', groupedData)
         },
         {
           label: 'Fair',
           data: groupedData.map(d => d.conditions.fair.percentage),
-          backgroundColor: groupedData.map((d, index) => {
-            const key = `${d.group}_fair`;
-            const opacity = highlightedBars.has(key) ? 1.0 : 0.8;
-            return `rgba(${colors.fair.slice(0, 3).join(',')}, ${opacity})`;
-          }),
-          borderColor: groupedData.map((d, index) => {
-            const key = `${d.group}_fair`;
-            return highlightedBars.has(key) 
-              ? `rgba(${colors.fair.slice(0, 3).join(',')}, 1)`
-              : `rgba(${colors.fair.slice(0, 3).join(',')}, 0.6)`;
-          }),
-          borderWidth: groupedData.map((d, index) => {
-            const key = `${d.group}_fair`;
-            return highlightedBars.has(key) ? 3 : 1;
-          })
+          ...createChartColors('fair', groupedData)
         },
         {
           label: 'Poor',
           data: groupedData.map(d => d.conditions.poor.percentage),
-          backgroundColor: groupedData.map((d, index) => {
-            const key = `${d.group}_poor`;
-            const opacity = highlightedBars.has(key) ? 1.0 : 0.8;
-            return `rgba(${colors.poor.slice(0, 3).join(',')}, ${opacity})`;
-          }),
-          borderColor: groupedData.map((d, index) => {
-            const key = `${d.group}_poor`;
-            return highlightedBars.has(key) 
-              ? `rgba(${colors.poor.slice(0, 3).join(',')}, 1)`
-              : `rgba(${colors.poor.slice(0, 3).join(',')}, 0.6)`;
-          }),
-          borderWidth: groupedData.map((d, index) => {
-            const key = `${d.group}_poor`;
-            return highlightedBars.has(key) ? 3 : 1;
-          })
+          ...createChartColors('poor', groupedData)
         },
         {
           label: 'Very Poor',
           data: groupedData.map(d => d.conditions.veryPoor.percentage),
-          backgroundColor: groupedData.map((d, index) => {
-            const key = `${d.group}_veryPoor`;
-            const opacity = highlightedBars.has(key) ? 1.0 : 0.8;
-            return `rgba(${colors.veryPoor.slice(0, 3).join(',')}, ${opacity})`;
-          }),
-          borderColor: groupedData.map((d, index) => {
-            const key = `${d.group}_veryPoor`;
-            return highlightedBars.has(key) 
-              ? `rgba(${colors.veryPoor.slice(0, 3).join(',')}, 1)`
-              : `rgba(${colors.veryPoor.slice(0, 3).join(',')}, 0.6)`;
-          }),
-          borderWidth: groupedData.map((d, index) => {
-            const key = `${d.group}_veryPoor`;
-            return highlightedBars.has(key) ? 3 : 1;
-          })
+          ...createChartColors('veryPoor', groupedData)
         }
       ];
     } else {
-      // Simple bar chart with average values
       const chartData = groupedData.map(d => d.avgValue);
       console.log('[Chart Debug] Chart data for rendering:', chartData);
       console.log('[Chart Debug] GroupedData avgValues:', groupedData.map(d => ({ group: d.group, avgValue: d.avgValue })));
@@ -470,12 +400,10 @@ const EnhancedChartPanel: React.FC = () => {
         data: chartData,
         backgroundColor: token.colorPrimary,
         borderRadius: 4,
-        // ADD: Ensure bars are visible even with small values
         borderWidth: 1,
         borderColor: token.colorPrimary
       }];
       
-      // DEBUG: Log if all values are zero/null
       const hasValidData = chartData.some(val => val && val > 0);
       if (!hasValidData) {
         console.warn('[Chart Debug] All chart values are zero or null!');
@@ -493,7 +421,6 @@ const EnhancedChartPanel: React.FC = () => {
           mode: stackedMode ? 'point' : 'index',
           intersect: false
         },
-        // ADD THIS: Cursor pointer on hover
         onHover: (event, elements) => {
           const canvas = event.native?.target as HTMLCanvasElement;
           if (canvas) {
@@ -507,16 +434,23 @@ const EnhancedChartPanel: React.FC = () => {
             position: 'bottom',
             labels: {
               padding: 15,
-              font: { size: 11 }
+              font: { size: 11 },
+              color: token.colorText
             }
           },
           title: {
             display: true,
             text: `${KPI_LABELS[activeKpi]} by ${groupByOptions.find(o => o.value === groupBy)?.label || groupBy}${
               selectedSegment ? ` - Filtered to ${selectedSegment.group} (${selectedSegment.condition})` : ''
-            }`
+            }`,
+            color: token.colorText
           },
           tooltip: {
+            backgroundColor: token.colorBgElevated,
+            titleColor: token.colorText,
+            bodyColor: token.colorText,
+            borderColor: token.colorBorder,
+            borderWidth: 1,
             callbacks: {
               label: (context) => {
                 if (stackedMode) {
@@ -538,14 +472,28 @@ const EnhancedChartPanel: React.FC = () => {
             max: stackedMode ? 100 : undefined,
             title: {
               display: true,
-              text: stackedMode ? 'Percentage (%)' : 'Average Value'
+              text: stackedMode ? 'Percentage (%)' : 'Average Value',
+              color: token.colorText
+            },
+            ticks: {
+              color: token.colorTextSecondary
+            },
+            grid: {
+              color: token.colorBorderSecondary
             }
           },
           y: {
             stacked: stackedMode,
             title: {
               display: true,
-              text: groupByOptions.find(o => o.value === groupBy)?.label || groupBy
+              text: groupByOptions.find(o => o.value === groupBy)?.label || groupBy,
+              color: token.colorText
+            },
+            ticks: {
+              color: token.colorTextSecondary
+            },
+            grid: {
+              color: token.colorBorderSecondary
             }
           }
         }
@@ -564,7 +512,7 @@ const EnhancedChartPanel: React.FC = () => {
         chartInstance.current = null;
       }
     };
-  }, [groupedData, activeKpi, groupBy, loading, error, token, stackedMode, selectedSegment, highlightedBars, chartSelections, handleChartClick]);
+  }, [groupedData, activeKpi, groupBy, loading, error, token, stackedMode, selectedSegment, highlightedBars, chartSelections, handleChartClick, themeColors]);
 
   return (
     <Card 
@@ -616,7 +564,7 @@ const EnhancedChartPanel: React.FC = () => {
       {loading && (
         <div style={{ textAlign: 'center', padding: '50px 0' }}>
           <Spin size="large" />
-          <div style={{ marginTop: '12px' }}>Loading chart data...</div>
+          <div style={{ marginTop: '12px', color: token.colorText }}>Loading chart data...</div>
         </div>
       )}
 

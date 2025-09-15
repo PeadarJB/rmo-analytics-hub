@@ -134,20 +134,45 @@ export const RENDERER_CONFIG = {
   use5ClassRenderers: true,
   getThemeAwareColors: (token: any, alpha: number = 0.8) => ({
     fiveClass: {
-      veryGood: hexToRgbaArray(token.colorSuccess, alpha),
-      good: hexToRgbaArray(token.green4, alpha),
-      fair: hexToRgbaArray(token.colorWarning, alpha),
-      poor: hexToRgbaArray(token.orange5, alpha),
-      veryPoor: hexToRgbaArray(token.colorError, alpha),
+      // Very Good: Deep vibrant green
+      veryGood: [34, 139, 34, alpha], // forestgreen
+      // Good: Bright blue-green  
+      good: [0, 150, 136, alpha], // teal
+      // Fair: Bright amber/yellow
+      fair: [255, 193, 7, alpha], // amber
+      // Poor: Vibrant orange
+      poor: [255, 87, 34, alpha], // deep orange
+      // Very Poor: Bright red
+      veryPoor: [244, 67, 54, alpha], // red
     },
     threeClass: {
-      good: hexToRgbaArray(token.colorSuccess, alpha),
-      fair: hexToRgbaArray(token.colorWarning, alpha),
-      poor: hexToRgbaArray(token.colorError, alpha),
+      // Good: Vibrant green
+      good: [76, 175, 80, alpha], // green
+      // Fair: Bright amber
+      fair: [255, 193, 7, alpha], // amber  
+      // Poor: Vibrant red
+      poor: [244, 67, 54, alpha], // red
+    },
+  }),
+  // Alternative high-contrast scheme for accessibility
+  getHighContrastColors: (token: any, alpha: number = 0.8) => ({
+    fiveClass: {
+      veryGood: [0, 128, 0, alpha], // pure green
+      good: [0, 191, 255, alpha], // deep sky blue
+      fair: [255, 215, 0, alpha], // gold
+      poor: [255, 69, 0, alpha], // red orange
+      veryPoor: [220, 20, 60, alpha], // crimson
+    },
+    threeClass: {
+      good: [0, 128, 0, alpha], // pure green
+      fair: [255, 215, 0, alpha], // gold
+      poor: [220, 20, 60, alpha], // crimson
     },
   }),
   lineWidth: 4
 };
+  lineWidth: 4
+
 
 /**
  * Defines the structure for a selectable layer in the swipe panel.

@@ -83,19 +83,33 @@ const EnhancedChartPanel: React.FC = () => {
             groupBy
           );
         } else {
-          console.log('[Chart Debug] Fetching simple averages for:', {
-            activeKpi,
-            year: currentFilters.year[0] || CONFIG.defaultYears[0],
-            groupBy,
-            definitionExpression: (roadLayer as any)?.definitionExpression || '1=1'
-          });
-          
-          const simpleData = await QueryService.computeGroupedStatistics(
-            roadLayer,
-            getKPIFieldName(activeKpi, currentFilters.year[0] || CONFIG.defaultYears[0]),
-            groupBy,
-            (roadLayer as any)?.definitionExpression || '1=1'
-          );
+          // MODIFICATION START: Add logic to handle subgroup correctly
+          let simpleData;
+          const kpiField = getKPIFieldName(activeKpi, currentFilters.year[0] || CONFIG.defaultYears[0]);
+          const whereClause = (roadLayer as any)?.definitionExpression || '1=1';
+
+          if (groupBy === 'subgroup') {
+            console.log('[Chart Debug] Fetching subgroup averages...');
+            simpleData = await QueryService.computeSubgroupStatistics(
+              roadLayer,
+              kpiField,
+              whereClause
+            );
+          } else {
+            console.log('[Chart Debug] Fetching simple averages for:', {
+              activeKpi,
+              year: currentFilters.year[0] || CONFIG.defaultYears[0],
+              groupBy,
+              definitionExpression: whereClause
+            });
+            simpleData = await QueryService.computeGroupedStatistics(
+              roadLayer,
+              kpiField,
+              groupBy,
+              whereClause
+            );
+          }
+          // MODIFICATION END
           
           console.log('[Chart Debug] Raw QueryService result:', simpleData);
           
@@ -598,7 +612,9 @@ const EnhancedChartPanel: React.FC = () => {
       
       {!loading && dataStatus === 'success' && groupedData.length > 0 && (
         <>
-          <canvas ref={chartRef} height={700} />
+          <div style={{ position: 'relative', height: '700px' }}>
+            <canvas ref={chartRef} />
+          </div>
           {stackedMode && (
             <div style={{
               marginTop: '8px',

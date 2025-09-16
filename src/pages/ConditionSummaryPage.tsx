@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Layout, Typography, Switch, Space, Segmented, theme } from 'antd';
 import useAppStore from '@/store/useAppStore';
+import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
 import SimpleSwipePanel from '@/components/SimpleSwipePanel';
@@ -105,13 +106,14 @@ const ConditionSummaryPage: React.FC = () => {
     </div>
   );
 
-  return (
+  return withTheme(themeMode, (
     <>
       <Header style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         background: token.colorBgContainer,
+        borderBottom: `1px solid ${token.colorBorder}`,
         padding: '0 16px',
         flexShrink: 0
       }}>
@@ -123,7 +125,8 @@ const ConditionSummaryPage: React.FC = () => {
       <Content style={{
         flex: 1,
         overflow: 'hidden',
-        position: 'relative'
+        position: 'relative',
+        background: token.colorBgLayout
       }}>
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <div id="conditionViewDiv" style={{ width: '100%', height: '100%' }} />
@@ -136,7 +139,7 @@ const ConditionSummaryPage: React.FC = () => {
         </div>
       </Content>
     </>
-  );
+  ));
 };
 
 export default ConditionSummaryPage;

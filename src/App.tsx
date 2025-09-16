@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Layout, Typography, Switch, Segmented, theme } from 'antd';
 import useAppStore from '@/store/useAppStore';
 import { withTheme } from '@/config/themeConfig';
@@ -22,6 +22,7 @@ const App: React.FC = () => {
     activeKpi, setActiveKpi,
     currentPage, setCurrentPage,
   } = useAppStore();
+  const [siderHovered, setSiderHovered] = useState(false);
 
   const { styles } = usePanelStyles();
   const { token } = theme.useToken();
@@ -44,15 +45,46 @@ const App: React.FC = () => {
         value={activeKpi}
         options={Object.keys(KPI_LABELS).map(k => ({ label: KPI_LABELS[k as KPIKey], value: k as KPIKey }))}
         onChange={(v) => setActiveKpi(v as KPIKey)}
+        style={{
+          backgroundColor: token.colorBgContainer,
+          border: `1px solid ${token.colorBorder}`
+        }}
       />
-      <Switch checked={showFilters} onChange={setShowFilters} checkedChildren="Filter" unCheckedChildren="Filter" />
-      <Switch checked={showStats} onChange={setShowStats} checkedChildren="Stats" unCheckedChildren="Stats" />
-      <Switch checked={showChart} onChange={setShowChart} checkedChildren="Chart" unCheckedChildren="Chart" />
+      <Switch 
+        checked={showFilters} 
+        onChange={setShowFilters} 
+        checkedChildren="Filter" 
+        unCheckedChildren="Filter"
+        style={{
+          backgroundColor: showFilters ? token.colorPrimary : token.colorBgContainer,
+        }}
+      />
+      <Switch 
+        checked={showStats} 
+        onChange={setShowStats} 
+        checkedChildren="Stats" 
+        unCheckedChildren="Stats"
+        style={{
+          backgroundColor: showStats ? token.colorPrimary : token.colorBgContainer,
+        }}
+      />
+      <Switch 
+        checked={showChart} 
+        onChange={setShowChart} 
+        checkedChildren="Chart" 
+        unCheckedChildren="Chart"
+        style={{
+          backgroundColor: showChart ? token.colorPrimary : token.colorBgContainer,
+        }}
+      />
       <Switch
         checked={themeMode === 'dark'}
         onChange={(b) => setThemeMode(b ? 'dark' : 'light')}
         checkedChildren="Dark"
         unCheckedChildren="Light"
+        style={{
+          backgroundColor: (themeMode === 'dark') ? token.colorPrimary : token.colorBgContainer,
+        }}
       />
     </div>
   );
@@ -93,7 +125,6 @@ const App: React.FC = () => {
 
   // Subtle active styles for the sider items
   const baseItemStyle: React.CSSProperties = {
-    color: '#bbb',
     cursor: 'pointer',
     borderLeft: '3px solid transparent',
     transition: 'all 0.2s ease',
@@ -102,30 +133,60 @@ const App: React.FC = () => {
 
   const activeItemStyle = (active: boolean, pad: string | number): React.CSSProperties => ({
     ...baseItemStyle,
-    color: active ? '#fff' : '#bbb',
+    color: active ? token.colorTextLightSolid : token.colorTextSecondary,
     padding: pad,
-    background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
+    background: active ? token.colorPrimaryBg : 'transparent',
     borderLeftColor: active ? token.colorPrimary : 'transparent',
     fontWeight: active ? 600 : 400,
   });
 
   return withTheme(themeMode, (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-      <Sider collapsible defaultCollapsed width={220} theme="dark">
-        <div style={{ color: '#fff', padding: 12, fontWeight: 600 }}>RMO Logo</div>
+      <Sider 
+        collapsed={!siderHovered}
+        width={220} 
+        style={{
+          background: token.colorBgLayout,
+          borderRight: `1px solid ${token.colorBorder}`,
+          transition: 'all 0.3s ease',
+          overflow: 'hidden'
+        }}
+        trigger={null}
+        collapsedWidth={60}
+        onMouseEnter={() => setSiderHovered(true)}
+        onMouseLeave={() => setSiderHovered(false)}
+      >
+        <div style={{ 
+          color: token.colorText, 
+          padding: 12, 
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+          opacity: siderHovered ? 1 : 0,
+          transition: 'opacity 0.3s ease'
+        }}>
+          {siderHovered ? 'RMO Logo' : ''}
+        </div>
 
-        {/* Sider navigation with subtle active styling */}
+        {/* Sider navigation with conditional text */}
         <div
-          style={activeItemStyle(currentPage === 'overview', 12)}
+          style={{
+            ...activeItemStyle(currentPage === 'overview', 12),
+            whiteSpace: 'nowrap',
+            overflow: 'hidden'
+          }}
           onClick={() => setCurrentPage('overview')}
         >
-          Overview Page
+          {siderHovered ? 'Overview Page' : '📊'}
         </div>
         <div
-          style={activeItemStyle(currentPage === 'condition-summary', '0 12px 12px')}
+          style={{
+            ...activeItemStyle(currentPage === 'condition-summary', '0 12px 12px'),
+            whiteSpace: 'nowrap', 
+            overflow: 'hidden'
+          }}
           onClick={() => setCurrentPage('condition-summary')}
         >
-          Condition Summary Page
+          {siderHovered ? 'Condition Summary Page' : '📈'}
         </div>
       </Sider>
 
@@ -137,6 +198,7 @@ const App: React.FC = () => {
               alignItems: 'center',
               justifyContent: 'space-between',
               background: token.colorBgContainer,
+              borderBottom: `1px solid ${token.colorBorder}`,
               padding: '0 16px',
               flexShrink: 0
             }}>

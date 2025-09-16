@@ -75,10 +75,17 @@ const MapWidgets: React.FC = () => {
       content: legend, 
       group: 'top-left', 
       expandIcon: 'legend',
-      expandTooltip: 'Legend', // ADD: Tooltip
-      expanded: true, // ADD: Start expanded for visibility
-      mode: 'floating' // ADD: Better positioning mode
+      expandTooltip: 'Legend',
+      expanded: true,
+      mode: 'floating'
     });
+
+    // Apply comprehensive theme styling
+    if (exLegend.container) {
+      exLegend.container.style.backgroundColor = token.colorBgElevated;
+      exLegend.container.style.border = `1px solid ${token.colorBorder}`;
+      exLegend.container.style.boxShadow = token.boxShadow;
+    }
     
     const exList = new Expand({ 
       view: mapView, 

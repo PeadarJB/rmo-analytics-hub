@@ -94,7 +94,12 @@ const EnhancedStatsPanel: React.FC = () => {
             description="No road segments match your current filter selection. Please adjust your filters to see summary statistics."
             type="info"
             showIcon
-            style={{ marginTop: '12px' }}
+            style={{ 
+              marginTop: '12px',
+              backgroundColor: token.colorInfoBg,
+              border: `1px solid ${token.colorInfoBorder}`,
+              color: token.colorText
+            }}
           />
         </Space>
       </Card>

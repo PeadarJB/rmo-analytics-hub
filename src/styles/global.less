@@ -56,3 +56,60 @@ html, body, #root { height: 100%; margin: 0; }
   background-color: #ffffff !important;
   color: #000000 !important;
 }
+
+/* Enhanced Sider Behavior - Smooth Transitions */
+.ant-layout-sider {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.ant-layout-sider-children {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Sider content transitions */
+.ant-layout-sider .ant-layout-sider-children > div {
+  transition: opacity 0.3s ease, transform 0.3s ease !important;
+}
+
+/* Collapsed state optimizations */
+.ant-layout-sider-collapsed .ant-layout-sider-children {
+  overflow: hidden !important;
+}
+
+/* Smooth hover effects for sider items */
+.ant-layout-sider .ant-layout-sider-children > div:hover {
+  transform: translateX(2px);
+  transition: transform 0.2s ease;
+}
+
+/* Comprehensive ArcGIS Widget Theme Support */
+.esri-expand__container,
+.esri-legend,
+.esri-layer-list,
+.esri-basemap-gallery {
+  background-color: var(--ant-color-bg-elevated) !important;
+  border: 1px solid var(--ant-color-border) !important;
+  box-shadow: var(--ant-box-shadow) !important;
+}
+
+/* Dark theme overrides for ArcGIS widgets */
+[data-theme='dark'] .esri-widget {
+  background-color: var(--ant-color-bg-elevated) !important;
+  color: var(--ant-color-text) !important;
+}
+
+[data-theme='dark'] .esri-widget__heading {
+  color: var(--ant-color-text) !important;
+}
+
+/* Light theme ArcGIS widgets */
+[data-theme='light'] .esri-widget {
+  background-color: var(--ant-color-bg-container) !important;
+  color: var(--ant-color-text) !important;
+}
+
+/* Enhanced sider theming */
+.ant-layout-sider {
+  background-color: var(--ant-color-bg-layout) !important;
+  border-right: 1px solid var(--ant-color-border) !important;
+}

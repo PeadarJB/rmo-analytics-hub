@@ -20,11 +20,8 @@ const ConditionSummaryPage: React.FC = () => {
     activeKpi,
     setActiveKpi,
     updateLALayerVisibility,
-    laPolygonLayers,
     leftSwipeYear,
     rightSwipeYear,
-    roadLayer,
-    roadLayerSwipe
   } = useAppStore();
 
   const { styles } = usePanelStyles();
@@ -37,49 +34,17 @@ const ConditionSummaryPage: React.FC = () => {
       initializeMap('conditionViewDiv');
     }
     
-    // Hide road network layers for this page
-    const hideRoadLayers = () => {
-      const state = useAppStore.getState();
-      if (state.roadLayer) {
-        state.roadLayer.visible = false;
-        console.log('Road layer hidden');
-      }
-      if (state.roadLayerSwipe) {
-        state.roadLayerSwipe.visible = false;
-        console.log('Road layer swipe hidden');
-      }
-    };
-    
-    // Hide immediately
-    hideRoadLayers();
-    
-    // Also hide after a delay to ensure the layers are loaded
-    const timer = setTimeout(hideRoadLayers, 1000);
-    
-    // Update LA layer visibility when page loads
+    // MODIFICATION START: The store now handles showing/hiding layers when the page changes.
+    // This effect now only needs to ensure the correct LA polygon layers are visible when this page is active.
     updateLALayerVisibility();
+    // MODIFICATION END
     
-    // Cleanup: restore road layer visibility when leaving page
-    return () => {
-      clearTimeout(timer);
-      const state = useAppStore.getState();
-      if (state.roadLayer) {
-        state.roadLayer.visible = true;
-      }
-      if (state.roadLayerSwipe) {
-        state.roadLayerSwipe.visible = true;
-      }
-    };
   }, [initializeMap, updateLALayerVisibility]);
 
   // Update visibility when KPI changes
   useEffect(() => {
     updateLALayerVisibility();
-    
-    // Ensure road layers stay hidden when KPI changes
-    if (roadLayer) roadLayer.visible = false;
-    if (roadLayerSwipe) roadLayerSwipe.visible = false;
-  }, [activeKpi, roadLayer, roadLayerSwipe, updateLALayerVisibility]);
+  }, [activeKpi, updateLALayerVisibility]);
 
   const headerControls = (
     <div className={styles.headerRight}>

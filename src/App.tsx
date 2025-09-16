@@ -168,26 +168,44 @@ const App: React.FC = () => {
         </div>
 
         {/* Sider navigation with conditional text */}
-        <div
+        <button
           style={{
             ...activeItemStyle(currentPage === 'overview', 12),
             whiteSpace: 'nowrap',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            // Reset button styles
+            background: 'none',
+            border: 'none',
+            width: '100%',
+            textAlign: 'left',
+            padding: 0, // Padding is handled by activeItemStyle
+            cursor: 'pointer'
           }}
           onClick={() => setCurrentPage('overview')}
         >
-          {siderHovered ? 'Overview Page' : '📊'}
-        </div>
-        <div
+          <div style={{ padding: 12 }}>
+            {siderHovered ? 'Overview Page' : '📊'}
+          </div>
+        </button>
+        <button
           style={{
             ...activeItemStyle(currentPage === 'condition-summary', '0 12px 12px'),
             whiteSpace: 'nowrap', 
-            overflow: 'hidden'
+            overflow: 'hidden',
+            // Reset button styles
+            background: 'none',
+            border: 'none',
+            width: '100%',
+            textAlign: 'left',
+            padding: 0, // Padding is handled by activeItemStyle
+            cursor: 'pointer'
           }}
           onClick={() => setCurrentPage('condition-summary')}
         >
-          {siderHovered ? 'Condition Summary Page' : '📈'}
-        </div>
+          <div style={{ padding: '0 12px 12px' }}>
+            {siderHovered ? 'Condition Summary Page' : '📈'}
+          </div>
+        </button>
       </Sider>
 
       <Layout style={{ height: '100%', overflow: 'hidden' }}>

@@ -244,12 +244,11 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       }
       size="small"
       className={panelStyles.swipePanel}
-      extra={<Button type="text" icon={<CloseOutlined />} onClick={handleClose} size="small" />}
+      extra={<Button type="text" icon={<CloseOutlined />} onClick={handleClose} size="small" aria-label="Close comparison panel" />}
       styles={{
         body: { padding: token.padding },
         header: { 
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer
+          borderBottom: `1px solid ${token.colorBorderSecondary}`
         }
       }}
     >

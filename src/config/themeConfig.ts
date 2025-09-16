@@ -17,9 +17,14 @@ export const darkThemeTokens = {
     colorSuccess: '#95de64',
     colorWarning: '#ffd666',
     colorError: '#ff7875',
+    colorBgLayout: '#0F1115',
+    colorBgContainer: '#141414',
+    colorBgElevated: '#1F1F1F',
+    colorBorder: '#434343',
+    colorBorderSecondary: '#303030',
     borderRadius: 8,
-    colorBgBase: '#0f1115',
-    colorTextBase: '#e6e6e6'
+    colorBgBase: '#0F1115',
+    colorTextBase: '#E6E6E6'
   },
   algorithm: undefined
 };

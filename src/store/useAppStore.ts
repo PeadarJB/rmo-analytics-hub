@@ -102,6 +102,8 @@ interface AppState {
   setCurrentPage: (page: 'overview' | 'condition-summary') => void;
   setSwipeYears: (left: number, right: number) => void;
   updateLALayerVisibility: () => void;
+  // ADD THIS NEW HELPER METHOD DECLARATION:
+  setLaLayersVisibility: (visible: boolean) => void;
   
   // ADD THESE TWO MISSING METHOD DECLARATIONS:
   enterSwipeMode: () => void;
@@ -173,9 +175,13 @@ const useAppStore = create<AppState>()(
             // Hide road layers and enable auto-start for swipe
             state.hideRoadNetworkForSwipe();
             set({ currentPage: page, swipePanelAutoStart: true, showSwipe: true });
+            // Ensure the correct LA layers become visible
+            state.updateLALayerVisibility();
           } else {
             // Restore road layers when leaving condition summary
             state.restoreRoadNetworkVisibility();
+            // MODIFICATION: Explicitly hide all LA polygon layers
+            state.setLaLayersVisibility(false);
             set({ currentPage: page, swipePanelAutoStart: false });
           }
         },
@@ -197,6 +203,16 @@ const useAppStore = create<AppState>()(
           laPolygonLayers.forEach((layer, name) => {
             layer.visible = (name === leftLayerName || name === rightLayerName);
           });
+        },
+        // ADD THIS NEW HELPER METHOD:
+        setLaLayersVisibility: (visible) => {
+          const { laPolygonLayers } = get();
+          if (laPolygonLayers) {
+            laPolygonLayers.forEach(layer => {
+              layer.visible = visible;
+            });
+            console.log(`All LA polygon layers set to visible: ${visible}`);
+          }
         },
         setRoadLayerVisibility: (visible) => {
           const { roadLayer, roadLayerSwipe } = get();

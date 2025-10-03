@@ -45,46 +45,30 @@ const App: React.FC = () => {
         value={activeKpi}
         options={Object.keys(KPI_LABELS).map(k => ({ label: KPI_LABELS[k as KPIKey], value: k as KPIKey }))}
         onChange={(v) => setActiveKpi(v as KPIKey)}
-        style={{
-          backgroundColor: token.colorBgContainer,
-          border: `1px solid ${token.colorBorder}`
-        }}
       />
       <Switch 
         checked={showFilters} 
         onChange={setShowFilters} 
         checkedChildren="Filter" 
         unCheckedChildren="Filter"
-        style={{
-          backgroundColor: showFilters ? token.colorPrimary : token.colorBgContainer,
-        }}
       />
       <Switch 
         checked={showStats} 
         onChange={setShowStats} 
         checkedChildren="Stats" 
         unCheckedChildren="Stats"
-        style={{
-          backgroundColor: showStats ? token.colorPrimary : token.colorBgContainer,
-        }}
       />
       <Switch 
         checked={showChart} 
         onChange={setShowChart} 
         checkedChildren="Chart" 
         unCheckedChildren="Chart"
-        style={{
-          backgroundColor: showChart ? token.colorPrimary : token.colorBgContainer,
-        }}
       />
       <Switch
         checked={themeMode === 'dark'}
         onChange={(b) => setThemeMode(b ? 'dark' : 'light')}
         checkedChildren="Dark"
         unCheckedChildren="Light"
-        style={{
-          backgroundColor: (themeMode === 'dark') ? token.colorPrimary : token.colorBgContainer,
-        }}
       />
     </div>
   );
@@ -133,7 +117,7 @@ const App: React.FC = () => {
 
   const activeItemStyle = (active: boolean, pad: string | number): React.CSSProperties => ({
     ...baseItemStyle,
-    color: active ? token.colorTextLightSolid : token.colorTextSecondary,
+    color: active ? token.colorPrimary : token.colorTextSecondary,
     padding: pad,
     background: active ? token.colorPrimaryBg : 'transparent',
     borderLeftColor: active ? token.colorPrimary : 'transparent',
@@ -156,16 +140,19 @@ const App: React.FC = () => {
         onMouseEnter={() => setSiderHovered(true)}
         onMouseLeave={() => setSiderHovered(false)}
       >
+        {/* MODIFICATION START: Logo now uses an img tag and is always visible */}
         <div style={{ 
-          color: token.colorText, 
           padding: 12, 
-          fontWeight: 600,
-          whiteSpace: 'nowrap',
-          opacity: siderHovered ? 1 : 0,
-          transition: 'opacity 0.3s ease'
+          textAlign: 'center', // Center the logo
         }}>
-          {siderHovered ? 'RMO Logo' : ''}
+          <img src="/img/RMO_Logo.png" alt="RMO Logo" style={{ 
+            height: '50%', // Adjust size as needed
+            transition: 'all 0.3s ease',
+            // Show full logo when hovered (expanded), otherwise show a smaller version
+            maxWidth: siderHovered ? '70%' : '32px' 
+          }} />
         </div>
+        {/* MODIFICATION END */}
 
         {/* Sider navigation with conditional text */}
         <button

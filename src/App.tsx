@@ -66,7 +66,11 @@ const App: React.FC = () => {
       />
       <Switch
         checked={themeMode === 'dark'}
-        onChange={(b) => setThemeMode(b ? 'dark' : 'light')}
+        onChange={(isDark) => {
+          const newMode = isDark ? 'dark' : 'light';
+          setThemeMode(newMode);
+          // No need for additional code here - setThemeMode now handles the renderer update
+        }}
         checkedChildren="Dark"
         unCheckedChildren="Light"
       />

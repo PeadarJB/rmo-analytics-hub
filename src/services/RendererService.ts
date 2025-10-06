@@ -581,6 +581,24 @@ export default class RendererService {
       defaultLabel: 'Other'
     };
   }
+
+  /**
+   * Clear cached renderers for a specific theme mode
+   * Call this when theme changes to prevent stale renderers
+   */
+  static clearThemeCache(themeMode: 'light' | 'dark'): void {
+    const keysToDelete: string[] = [];
+    
+    this.rendererCache.forEach((_, key) => {
+      if (key.endsWith(`_${themeMode}`)) {
+        keysToDelete.push(key);
+      }
+    });
+    
+    keysToDelete.forEach(key => this.rendererCache.delete(key));
+    
+    console.log(`[Renderer Cache] Cleared ${keysToDelete.length} cached renderers for ${themeMode} theme`);
+  }
 }
 
 /**

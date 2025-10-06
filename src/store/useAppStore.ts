@@ -161,7 +161,21 @@ const useAppStore = create<AppState>()(
         isCalculatingChartStats: false,
 
         setError: (err) => set({ error: err }),
-        setThemeMode: (mode) => set({ themeMode: mode }),
+        setThemeMode: (mode) => {
+          const oldMode = get().themeMode;
+          set({ themeMode: mode });
+          
+          // CRITICAL FIX: Clear renderer cache for old theme and update renderer
+          if (oldMode !== mode) {
+            // Import RendererService at top of file if not already imported
+            RendererService.clearThemeCache(oldMode);
+            
+            // Delay to ensure theme tokens are updated
+            setTimeout(() => {
+              get().updateRenderer();
+            }, 150);
+          }
+        },
 
         setShowFilters: (b) => set({ showFilters: b, showChart: b ? false : get().showChart }),
         setShowStats: (b) => set({ showStats: b }),
@@ -297,12 +311,18 @@ const useAppStore = create<AppState>()(
           });
           
           try {
-            // 1. Reset layer definition expression to show all features
+            // CRITICAL FIX: Proper sequencing
+            // 1. Reset layer definition expression FIRST
             if (state.roadLayer) {
               (state.roadLayer as any).definitionExpression = '1=1';
+              // Wait for layer to process the definition change
+              await state.roadLayer.when();
             }
             
-            // 2. Reset map view to initial extent with animation
+            // 2. THEN update renderer (this will refresh the layer internally)
+            state.updateRenderer();
+            
+            // 3. THEN reset map extent
             if (state.mapView && state.initialExtent) {
               await state.mapView.goTo(state.initialExtent, {
                 duration: 1000,
@@ -310,13 +330,9 @@ const useAppStore = create<AppState>()(
               });
             }
             
-            // 3. Update renderer for current year/KPI combination
-            state.updateRenderer();
-            
-            // 4. Recalculate statistics for full dataset
+            // 4. Finally recalculate statistics
             await state.calculateStatistics();
             
-            // 5. Show success message
             message.success(
               `Filters cleared. Showing all ${state.activeKpi.toUpperCase()} data for ${currentYear[0]}`,
               3
@@ -600,8 +616,18 @@ const useAppStore = create<AppState>()(
           set({ appliedFiltersCount: filterCount });
 
           try {
+            // Apply definition expression
+            (roadLayer as any).definitionExpression = where;
+            
+            // CRITICAL FIX: Wait for layer to process the definition change
+            await roadLayer.when();
+            
+            // THEN zoom to the filtered extent
             await QueryService.zoomToDefinition(state.mapView, roadLayer, where);
+            
+            // THEN update renderer (this will refresh the layer)
             state.updateRenderer();
+            
             set({ showStats: true });
             await state.calculateStatistics();
             
@@ -696,9 +722,14 @@ const useAppStore = create<AppState>()(
             const renderer = RendererService.createKPIRenderer(activeKpi, year, themeMode);
             (roadLayer as any).renderer = renderer;
             
+            // CRITICAL FIX: Force layer to refresh with new renderer
+            roadLayer.refresh();
+            
             if (state.roadLayerSwipe) {
               if (!(state.roadLayerSwipe as any).renderer) {
                 (state.roadLayerSwipe as any).renderer = renderer;
+                // CRITICAL FIX: Also refresh swipe layer
+                state.roadLayerSwipe.refresh();
               }
             }
             

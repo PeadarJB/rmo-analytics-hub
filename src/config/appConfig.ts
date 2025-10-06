@@ -1,5 +1,7 @@
 // rmo-analytics-hub/src/config/appConfig.ts
 
+import { getConditionColors } from '@/utils/themeHelpers';
+
 export type KPIKey = 'iri' | 'rut' | 'psci' | 'csc' | 'mpd' | 'lpv3';
 
 // Road segment constants

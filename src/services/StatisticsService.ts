@@ -434,6 +434,7 @@ export default class StatisticsService {
   /**
    * Compute grouped statistics with condition class breakdowns
    * Returns data suitable for stacked bar charts
+   * FIXED: Now properly handles subgroup grouping
    */
   static async computeGroupedStatisticsWithConditions(
     layer: FeatureLayer | null,
@@ -451,19 +452,46 @@ export default class StatisticsService {
       const baseWhere = (layer as any).definitionExpression || '1=1';
       const whereClause = `(${baseWhere}) AND ${kpiField} IS NOT NULL`;
 
-      // Get unique groups first
-      const groupQuery = layer.createQuery();
-      groupQuery.where = whereClause;
-      groupQuery.returnDistinctValues = true;
-      groupQuery.outFields = [groupByField];
-      groupQuery.returnGeometry = false;
+      let groups: string[];
       
-      const groupResult = await layer.queryFeatures(groupQuery);
-      const groups = groupResult.features.map(f => f.attributes[groupByField]).filter(g => g != null);
+      // CRITICAL FIX: Handle subgroup specially
+      if (groupByField === 'subgroup') {
+        // For subgroups, use predefined categories
+        groups = CONFIG.filters.subgroup.options?.map(opt => opt.label) || [];
+      } else {
+        // For regular fields, query unique values
+        const groupQuery = layer.createQuery();
+        groupQuery.where = whereClause;
+        groupQuery.returnDistinctValues = true;
+        groupQuery.outFields = [groupByField];
+        groupQuery.returnGeometry = false;
+        
+        const groupResult = await layer.queryFeatures(groupQuery);
+        groups = groupResult.features.map(f => f.attributes[groupByField]).filter(g => g != null);
+      }
 
       // For each group, calculate condition breakdowns
       const groupedStats = await Promise.all(groups.map(async (groupValue) => {
-        const groupWhere = `${whereClause} AND ${groupByField} = '${groupValue.replace(/'/g, "''")}'`;
+        let groupWhere: string;
+        
+        // CRITICAL FIX: Build WHERE clause based on group type
+        if (groupByField === 'subgroup') {
+          // For subgroups, use the special WHERE clause builder
+          const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => opt.label === groupValue);
+          if (!subgroupOption) {
+            console.warn(`No subgroup option found for: ${groupValue}`);
+            return null;
+          }
+          
+          if (subgroupOption.value === 'Rural') {
+            groupWhere = `${whereClause} AND (Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)`;
+          } else {
+            groupWhere = `${whereClause} AND ${subgroupOption.value} = 1`;
+          }
+        } else {
+          // For regular fields, use simple equality
+          groupWhere = `${whereClause} AND ${groupByField} = '${groupValue.toString().replace(/'/g, "''")}'`;
+        }
         
         // Build condition expressions for this KPI
         const conditionExpressions = this.buildConditionExpressions(kpiField, activeKpi, KPI_THRESHOLDS[activeKpi]);
@@ -501,8 +529,10 @@ export default class StatisticsService {
         };
       }));
 
-      // Calculate percentages
-      groupedStats.forEach(stat => {
+      // Filter out null results and calculate percentages
+      const validStats = groupedStats.filter((stat): stat is GroupedConditionStats => stat !== null);
+      
+      validStats.forEach(stat => {
         const total = stat.totalCount;
         if (total > 0) {
           stat.conditions.veryGood.percentage = (stat.conditions.veryGood.count / total) * 100;
@@ -513,7 +543,7 @@ export default class StatisticsService {
         }
       });
 
-      return groupedStats;
+      return validStats;
 
     } catch (error) {
       console.error('Error computing grouped condition statistics:', error);

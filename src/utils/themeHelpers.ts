@@ -25,17 +25,17 @@ export function getConditionColors(): Record<string, number[]> {
 /**
  * Converts hex color to RGB array for ArcGIS
  */
-function hexToRgb(hex: string): number[] {
+export function hexToRgb(hex: string, alpha: number = 0.8): number[] {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   if (!result) {
     console.warn(`Invalid hex color: ${hex}`);
-    return [128, 128, 128, 0.8]; // Fallback gray
+    return [128, 128, 128, alpha]; // Fallback gray
   }
   return [
     parseInt(result[1], 16),
     parseInt(result[2], 16),
     parseInt(result[3], 16),
-    0.8 // Alpha
+    alpha
   ];
 }
 

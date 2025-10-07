@@ -1,6 +1,5 @@
 import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';
-import { theme } from 'antd';
 import { 
   KPIKey, 
   KPI_THRESHOLDS, 
@@ -9,6 +8,7 @@ import {
   getKPIFieldName,
   getConditionClass 
 } from '@/config/appConfig';
+import { getCSSCustomProperty, hexToRgb } from '@/utils/themeHelpers';
 
 /**
  * Service for creating ArcGIS renderers for pavement condition KPIs.
@@ -60,8 +60,7 @@ export default class RendererService {
    * @returns ClassBreaksRenderer configured for the KPI
    */
   static createKPIRenderer(kpi: KPIKey, year: number, themeMode: 'light' | 'dark'): ClassBreaksRenderer {
-    const token = theme.getDesignToken();
-    const colors = RENDERER_CONFIG.getThemeAwareColors(token);
+    const colors = RENDERER_CONFIG.getThemeAwareColors();
 
     // Check cache first
     const cached = this.getCachedRenderer(kpi, year, themeMode);
@@ -81,7 +80,7 @@ export default class RendererService {
     const renderer = new ClassBreaksRenderer({
       field: fieldName,
       defaultSymbol: new SimpleLineSymbol({
-        color: hexToRgbaArray(token.colorTextQuaternary, 0.5), // Gray for null/undefined values
+        color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5), // Gray for null/undefined values
         width: RENDERER_CONFIG.lineWidth || 4
       }),
       defaultLabel: 'No Data'
@@ -191,50 +190,35 @@ export default class RendererService {
       renderer.addClassBreakInfo({
         minValue: 0,
         maxValue: thresholds.veryGood,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.veryGood,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.veryGood, width: lineWidth }),
         label: `Very Good (< ${thresholds.veryGood})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.veryGood,
         maxValue: thresholds.good,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.good,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
         label: `Good (${thresholds.veryGood}-${thresholds.good})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.good,
         maxValue: thresholds.fair,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.fair,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
         label: `Fair (${thresholds.good}-${thresholds.fair})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.fair,
         maxValue: thresholds.poor,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.poor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
         label: `Poor (${thresholds.fair}-${thresholds.poor})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.poor,
         maxValue: 9999999,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.veryPoor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.veryPoor, width: lineWidth }),
         label: `Very Poor (> ${thresholds.poor})`
       });
     } else {
@@ -245,30 +229,21 @@ export default class RendererService {
       renderer.addClassBreakInfo({
         minValue: 0,
         maxValue: goodMax,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.good,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
         label: `Good (< ${goodMax})`
       });
       
       renderer.addClassBreakInfo({
         minValue: goodMax,
         maxValue: fairMax,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.fair,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
         label: `Fair (${goodMax}-${fairMax})`
       });
       
       renderer.addClassBreakInfo({
         minValue: fairMax,
         maxValue: 9999999,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.poor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
         label: `Poor (> ${fairMax})`
       });
     }
@@ -292,50 +267,35 @@ export default class RendererService {
       renderer.addClassBreakInfo({
         minValue: 0,
         maxValue: thresholds.veryPoor,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.veryPoor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.veryPoor, width: lineWidth }),
         label: `Very Poor (≤ ${thresholds.veryPoor})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.veryPoor,
         maxValue: thresholds.poor,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.poor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
         label: `Poor (${thresholds.veryPoor}-${thresholds.poor})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.poor,
         maxValue: thresholds.fair,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.fair,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
         label: `Fair (${thresholds.poor}-${thresholds.fair})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.fair,
         maxValue: thresholds.good,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.good,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
         label: `Good (${thresholds.fair}-${thresholds.good})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.good,
         maxValue: 1,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.veryGood,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.veryGood, width: lineWidth }),
         label: `Very Good (> ${thresholds.good})`
       });
     } else {
@@ -345,30 +305,21 @@ export default class RendererService {
       renderer.addClassBreakInfo({
         minValue: 0,
         maxValue: poorMax,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.poor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
         label: `Poor (< ${poorMax})`
       });
       
       renderer.addClassBreakInfo({
         minValue: poorMax,
         maxValue: thresholds.fair,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.fair,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
         label: `Fair (${poorMax}-${thresholds.fair})`
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.fair,
         maxValue: 1,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.good,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
         label: `Good (> ${thresholds.fair})`
       });
     }
@@ -394,50 +345,35 @@ export default class RendererService {
       renderer.addClassBreakInfo({
         minValue: 0,
         maxValue: thresholds.veryPoor!, // Using value from appConfig
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.veryPoor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.veryPoor, width: lineWidth }),
         label: 'Very Poor (1-2): Reconstruction'
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.veryPoor!,
         maxValue: thresholds.poor!,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.poor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
         label: 'Poor (3-4): Structural Rehab'
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.poor!,
         maxValue: thresholds.fair!,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.fair,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
         label: 'Fair (5-6): Surface Restoration'
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.fair!,
         maxValue: thresholds.good!,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.good,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
         label: 'Good (7-8): Skid Resistance'
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.good!,
         maxValue: 10,
-        symbol: new SimpleLineSymbol({
-          color: colors.fiveClass.veryGood,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.veryGood, width: lineWidth }),
         label: 'Very Good (9-10): Routine Maint.'
       });
     } else {
@@ -445,30 +381,21 @@ export default class RendererService {
       renderer.addClassBreakInfo({
         minValue: 0,
         maxValue: thresholds.poor!,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.poor,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
         label: 'Poor (1-4): Reconstruction/Structural'
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.poor!,
         maxValue: thresholds.fair!,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.fair,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
         label: 'Fair (5-6): Surface Restoration'
       });
       
       renderer.addClassBreakInfo({
         minValue: thresholds.fair!,
         maxValue: 10,
-        symbol: new SimpleLineSymbol({
-          color: colors.threeClass.good,
-          width: lineWidth
-        }),
+        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
         label: 'Good (7-10): Routine Maintenance'
       });
     }
@@ -488,30 +415,21 @@ export default class RendererService {
     renderer.addClassBreakInfo({
       minValue: 0,
       maxValue: thresholds.poor!,
-      symbol: new SimpleLineSymbol({
-        color: colors.threeClass.poor,
-        width: lineWidth
-      }),
+      symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
       label: `Poor Skid Resistance (< ${thresholds.poor}mm)`
     });
     
     renderer.addClassBreakInfo({
       minValue: thresholds.poor!,
       maxValue: thresholds.good!,
-      symbol: new SimpleLineSymbol({
-        color: colors.threeClass.fair,
-        width: lineWidth
-      }),
+      symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
       label: `Fair (${thresholds.poor}-${thresholds.good}mm)`
     });
     
     renderer.addClassBreakInfo({
       minValue: thresholds.good!,
       maxValue: 9999999,
-      symbol: new SimpleLineSymbol({
-        color: colors.threeClass.good,
-        width: lineWidth
-      }),
+      symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
       label: `Good Skid Resistance (≥ ${thresholds.good}mm)`
     });
   }
@@ -537,12 +455,15 @@ export default class RendererService {
    * Creates a simple renderer with a single symbol (no classification)
    * Useful for highlighting selected features or showing all features uniformly
    */
-  static createSimpleRenderer(color: number[] = [0, 121, 193, 0.8], width: number = 4): any {
+  static createSimpleRenderer(color?: number[], width?: number): any {
+    const symbolColor = color || hexToRgb(getCSSCustomProperty('--color-brand-primary'), 0.8);
+    const symbolWidth = width || RENDERER_CONFIG.lineWidth;
+
     return {
       type: 'simple',
       symbol: new SimpleLineSymbol({
-        color: color,
-        width: width
+        color: symbolColor,
+        width: symbolWidth
       })
     };
   }
@@ -575,7 +496,7 @@ export default class RendererService {
       field: field,
       uniqueValueInfos: uniqueValueInfos,
       defaultSymbol: new SimpleLineSymbol({
-        color: [128, 128, 128, 0.5],
+        color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5),
         width: lineWidth
       }),
       defaultLabel: 'Other'
@@ -599,18 +520,4 @@ export default class RendererService {
     
     console.log(`[Renderer Cache] Cleared ${keysToDelete.length} cached renderers for ${themeMode} theme`);
   }
-}
-
-/**
- * Converts a hex color string to an RGBA array.
- * @param hex The hex color string (e.g., "#RRGGBB").
- * @param alpha The alpha transparency value (0-1).
- * @returns An array of numbers [r, g, b, a].
- */
-function hexToRgbaArray(hex: string, alpha: number = 1): number[] {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) {
-    return [128, 128, 128, 0.5]; // Fallback for invalid hex
-  }
-  return [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16), alpha];
 }

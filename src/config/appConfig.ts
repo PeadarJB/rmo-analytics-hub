@@ -112,68 +112,19 @@ export const SUBGROUP_CODE_TO_FIELD: Record<number, string> = {
   50: 'Rural'
 };
 
-/**
- * Converts a hex color string to an RGBA array.
- * @param hex The hex color string (e.g., "#RRGGBB").
- * @param alpha The alpha transparency value (0-1).
- * @returns An array of numbers [r, g, b, a].
- */
-const hexToRgbaArray = (hex: string, alpha: number = 1): number[] => {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) {
-    return [128, 128, 128, 0.5]; // Fallback for invalid hex
-  }
-  return [
-    parseInt(result[1], 16),
-    parseInt(result[2], 16),
-    parseInt(result[3], 16),
-    alpha,
-  ];
-};
-
 // Renderer configuration
 export const RENDERER_CONFIG = {
   use5ClassRenderers: true,
-  getThemeAwareColors: (token: any, alpha: number = 0.8) => ({
-    fiveClass: {
-      // Very Good: Deep vibrant green
-      veryGood: [34, 139, 34, alpha], // forestgreen
-      // Good: Bright blue-green  
-      good: [0, 150, 136, alpha], // teal
-      // Fair: Bright amber/yellow
-      fair: [255, 193, 7, alpha], // amber
-      // Poor: Vibrant orange
-      poor: [255, 87, 34, alpha], // deep orange
-      // Very Poor: Bright red
-      veryPoor: [244, 67, 54, alpha], // red
-    },
-    threeClass: {
-      // Good: Vibrant green
-      good: [76, 175, 80, alpha], // green
-      // Fair: Bright amber
-      fair: [255, 193, 7, alpha], // amber  
-      // Poor: Vibrant red
-      poor: [244, 67, 54, alpha], // red
-    },
-  }),
-  // Alternative high-contrast scheme for accessibility
-  getHighContrastColors: (token: any, alpha: number = 0.8) => ({
-    fiveClass: {
-      veryGood: [0, 128, 0, alpha], // pure green
-      good: [0, 191, 255, alpha], // deep sky blue
-      fair: [255, 215, 0, alpha], // gold
-      poor: [255, 69, 0, alpha], // red orange
-      veryPoor: [220, 20, 60, alpha], // crimson
-    },
-    threeClass: {
-      good: [0, 128, 0, alpha], // pure green
-      fair: [255, 215, 0, alpha], // gold
-      poor: [220, 20, 60, alpha], // crimson
-    },
-  }),
+  /**
+   * Gets theme-aware condition colors for map renderers.
+   * This function now delegates to `getConditionColors` from `themeHelpers`,
+   * which reads the values directly from CSS custom properties.
+   * This ensures the map symbology stays in sync with the application theme.
+   * @returns A record of condition names to RGBA color arrays.
+   */
+  getThemeAwareColors: () => getConditionColors(),
   lineWidth: 4
 };
-  lineWidth: 4
 
 
 /**

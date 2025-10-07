@@ -44,8 +44,8 @@ const EnhancedChartPanel: React.FC = () => {
 
   // Get theme-aware colors
   const themeColors = useMemo(() => 
-    RENDERER_CONFIG.getThemeAwareColors(token), 
-    [token]
+    RENDERER_CONFIG.getThemeAwareColors(), 
+    [themeMode] // Depend on themeMode to refetch colors when theme changes
   );
 
   // Use store-based selections for highlighting
@@ -348,19 +348,19 @@ const EnhancedChartPanel: React.FC = () => {
   }, [currentFilters]);
 
   // Helper function to create chart colors with theme awareness
-  const createChartColors = (conditionType: keyof typeof themeColors.fiveClass, groupData: GroupedConditionStats[]) => {
-    const baseColor = themeColors.fiveClass[conditionType];
+  const createChartColors = (conditionType: keyof typeof themeColors, groupData: GroupedConditionStats[]) => {
+    const baseColor = themeColors[conditionType];
     
     return {
       backgroundColor: groupData.map(d => {
         const key = `${d.group}_${conditionType}`;
         const opacity = highlightedBars.has(key) ? 1.0 : 0.8;
-        return `rgba(${baseColor.slice(0, 3).join(',')}, ${opacity})`;
+        return `rgba(${(baseColor as number[]).slice(0, 3).join(',')}, ${opacity})`;
       }),
       borderColor: groupData.map(d => {
         const key = `${d.group}_${conditionType}`;
         const opacity = highlightedBars.has(key) ? 1.0 : 0.6;
-        return `rgba(${baseColor.slice(0, 3).join(',')}, ${opacity})`;
+        return `rgba(${(baseColor as number[]).slice(0, 3).join(',')}, ${opacity})`;
       }),
       borderWidth: groupData.map(d => {
         const key = `${d.group}_${conditionType}`;

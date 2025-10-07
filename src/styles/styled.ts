@@ -13,14 +13,14 @@ export const usePanelStyles = createStyles(({ token }) => ({
     position: 'absolute' as const,
     bottom: 20,
     right: 16,
-    width: PANEL_WIDTH,  // Changed from 520 to shared constant
+    width: 575,  // Changed from 520 to shared constant
     zIndex: 9
   },
   statsPanel: {
     position: 'absolute' as const,
     bottom: 20,
     left: 16,
-    width: PANEL_WIDTH,
+    width: 575,
     maxHeight: '65vh',   // prevent overflow if many stats
     overflowY: 'auto',   // scrollable if content too tall
     zIndex: 99,

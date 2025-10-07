@@ -69,7 +69,6 @@ const App: React.FC = () => {
         onChange={(isDark) => {
           const newMode = isDark ? 'dark' : 'light';
           setThemeMode(newMode);
-          // No need for additional code here - setThemeMode now handles the renderer update
         }}
         checkedChildren="Dark"
         unCheckedChildren="Light"
@@ -111,7 +110,15 @@ const App: React.FC = () => {
     </div>
   );
 
-  // Subtle active styles for the sider items
+  // FIXED: Better color calculation for sider items
+  const getSiderTextColor = (active: boolean): string => {
+    if (active) {
+      return token.colorPrimary;
+    }
+    // For dark mode, use a lighter color; for light mode, use the secondary text color
+    return themeMode === 'dark' ? '#D1D5DB' : token.colorTextSecondary;
+  };
+
   const baseItemStyle: React.CSSProperties = {
     cursor: 'pointer',
     borderLeft: '3px solid transparent',
@@ -121,7 +128,7 @@ const App: React.FC = () => {
 
   const activeItemStyle = (active: boolean, pad: string | number): React.CSSProperties => ({
     ...baseItemStyle,
-    color: active ? token.colorPrimary : token.colorTextSecondary,
+    color: getSiderTextColor(active),
     padding: pad,
     background: active ? token.colorPrimaryBg : 'transparent',
     borderLeftColor: active ? token.colorPrimary : 'transparent',
@@ -144,19 +151,17 @@ const App: React.FC = () => {
         onMouseEnter={() => setSiderHovered(true)}
         onMouseLeave={() => setSiderHovered(false)}
       >
-        {/* MODIFICATION START: Logo now uses an img tag and is always visible */}
+        {/* Logo */}
         <div style={{ 
           padding: 12, 
-          textAlign: 'center', // Center the logo
+          textAlign: 'center',
         }}>
           <img src="/img/RMO_Logo.png" alt="RMO Logo" style={{ 
-            height: '50%', // Adjust size as needed
+            height: '50%',
             transition: 'all 0.3s ease',
-            // Show full logo when hovered (expanded), otherwise show a smaller version
             maxWidth: siderHovered ? '70%' : '32px' 
           }} />
         </div>
-        {/* MODIFICATION END */}
 
         {/* Sider navigation with conditional text */}
         <button
@@ -164,12 +169,11 @@ const App: React.FC = () => {
             ...activeItemStyle(currentPage === 'overview', 12),
             whiteSpace: 'nowrap',
             overflow: 'hidden',
-            // Reset button styles
             background: 'none',
             border: 'none',
             width: '100%',
             textAlign: 'left',
-            padding: 0, // Padding is handled by activeItemStyle
+            padding: 0,
             cursor: 'pointer'
           }}
           onClick={() => setCurrentPage('overview')}
@@ -183,12 +187,11 @@ const App: React.FC = () => {
             ...activeItemStyle(currentPage === 'condition-summary', '0 12px 12px'),
             whiteSpace: 'nowrap', 
             overflow: 'hidden',
-            // Reset button styles
             background: 'none',
             border: 'none',
             width: '100%',
             textAlign: 'left',
-            padding: 0, // Padding is handled by activeItemStyle
+            padding: 0,
             cursor: 'pointer'
           }}
           onClick={() => setCurrentPage('condition-summary')}
@@ -202,16 +205,25 @@ const App: React.FC = () => {
       <Layout style={{ height: '100%', overflow: 'hidden' }}>
         {currentPage === 'overview' ? (
           <>
+            {/* FIXED: Explicit dark mode header styling */}
             <Header style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: token.colorBgContainer,
+              background: themeMode === 'dark' ? '#1F2937' : '#FFFFFF',
               borderBottom: `1px solid ${token.colorBorder}`,
               padding: '0 16px',
               flexShrink: 0
             }}>
-              <Title level={4} style={{ margin: 0 }}>{CONFIG.title}</Title>
+              <Title 
+                level={4} 
+                style={{ 
+                  margin: 0, 
+                  color: themeMode === 'dark' ? '#F3F4F6' : '#111827'
+                }}
+              >
+                {CONFIG.title}
+              </Title>
               {headerControls}
             </Header>
 

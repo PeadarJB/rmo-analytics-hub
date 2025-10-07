@@ -12,14 +12,13 @@ const EnhancedStatsPanel: React.FC = () => {
     loading,
     updateRenderer,
     calculateStatistics,
-    // ADD THESE:
     chartFilteredStats,
     isChartFilterActive,
     isCalculatingChartStats,
-    chartSelections
+    chartSelections,
+    themeMode // ADD: Get theme mode
   } = useAppStore();
   const [isCalculating, setIsCalculating] = useState(false);
-  // ADDED: to use token in new elements
   const { token } = theme.useToken();
   
   const yearOptions = CONFIG.filters.year.options.map(o => ({
@@ -61,7 +60,7 @@ const EnhancedStatsPanel: React.FC = () => {
       }>
         <div style={{ textAlign: 'center', padding: '20px' }}>
           <Spin size="large" />
-          <div style={{ marginTop: '12px' }}>
+          <div style={{ marginTop: '12px', color: token.colorText }}>
             {isChartFilterActive ? 'Calculating chart selection statistics...' : 'Calculating statistics...'}
           </div>
         </div>
@@ -89,6 +88,7 @@ const EnhancedStatsPanel: React.FC = () => {
             onChange={(v) => onYearChange(Number(v))}
             block
           />
+          {/* FIXED: Proper styling for dark mode alert */}
           <Alert
             message="No Data Available"
             description="No road segments match your current filter selection. Please adjust your filters to see summary statistics."
@@ -96,8 +96,8 @@ const EnhancedStatsPanel: React.FC = () => {
             showIcon
             style={{ 
               marginTop: '12px',
-              backgroundColor: token.colorInfoBg,
-              border: `1px solid ${token.colorInfoBorder}`,
+              backgroundColor: themeMode === 'dark' ? token.colorBgElevated : token.colorInfoBg,
+              border: `1px solid ${token.colorBorder}`,
               color: token.colorText
             }}
           />
@@ -229,7 +229,7 @@ const EnhancedStatsPanel: React.FC = () => {
         </div>
       )}
 
-      <div style={{ fontSize: 12, opacity: 0.7 }}>
+      <div style={{ fontSize: 12, opacity: 0.7, color: token.colorTextSecondary }}>
         {isChartFilterActive ? 'Chart selection data' : `Updated for ${selectedYear} data`}: {new Date(displayStats.lastUpdated).toLocaleString()}
       </div>
     </Card>

@@ -162,19 +162,19 @@ const useAppStore = create<AppState>()(
 
         setError: (err) => set({ error: err }),
         setThemeMode: (mode) => {
-          const oldMode = get().themeMode;
+          // Set the data-theme attribute on the root element
+          document.documentElement.setAttribute('data-theme', mode);
+          // Persist the theme choice in localStorage
+          localStorage.setItem('rmo-theme', mode);
+          
           set({ themeMode: mode });
           
-          // CRITICAL FIX: Clear renderer cache for old theme and update renderer
-          if (oldMode !== mode) {
-            // Import RendererService at top of file if not already imported
-            RendererService.clearThemeCache(oldMode);
-            
-            // Delay to ensure theme tokens are updated
-            setTimeout(() => {
-              get().updateRenderer();
-            }, 150);
-          }
+          // Clear the renderer cache for the *previous* theme to force re-creation
+          const previousTheme = mode === 'light' ? 'dark' : 'light';
+          RendererService.clearThemeCache(previousTheme);
+          
+          // Update the renderer after a short delay to allow CSS tokens to update
+          setTimeout(() => get().updateRenderer(), 100);
         },
 
         setShowFilters: (b) => set({ showFilters: b, showChart: b ? false : get().showChart }),

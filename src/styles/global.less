@@ -34,29 +34,6 @@ html, body, #root { height: 100%; margin: 0; }
   width: 100%; 
 }
 
-/* ArcGIS Widget Theme Overrides */
-.esri-widget--dark {
-  background-color: #1f1f1f !important;
-  color: #ffffff !important;
-}
-
-.esri-widget--dark .esri-widget__heading {
-  color: #ffffff !important;
-}
-
-.esri-widget--dark .esri-menu__list-item {
-  color: #ffffff !important;
-}
-
-.esri-widget--dark .esri-menu__list-item:hover {
-  background-color: #333333 !important;
-}
-
-.esri-widget--light {
-  background-color: #ffffff !important;
-  color: #000000 !important;
-}
-
 /* Enhanced Sider Behavior - Smooth Transitions */
 .ant-layout-sider {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -82,24 +59,24 @@ html, body, #root { height: 100%; margin: 0; }
   transition: transform 0.2s ease;
 }
 
-/* Comprehensive ArcGIS Widget Theme Support */
+/* Comprehensive ArcGIS Widget Theme Support using CSS Variables */
 .esri-expand__container,
 .esri-legend,
 .esri-layer-list,
 .esri-basemap-gallery {
-  background-color: var(--ant-color-bg-elevated) !important;
-  border: 1px solid var(--ant-color-border) !important;
-  box-shadow: var(--ant-box-shadow) !important;
+  background-color: var(--panel-bg) !important;
+  border: 1px solid var(--color-border-default) !important;
+  box-shadow: var(--panel-shadow) !important;
 }
 
 /* Dark theme overrides for ArcGIS widgets */
 [data-theme='dark'] .esri-widget {
-  background-color: var(--ant-color-bg-elevated) !important;
-  color: var(--ant-color-text) !important;
+  background-color: var(--panel-bg) !important;
+  color: var(--color-fg-default) !important;
 }
 
 [data-theme='dark'] .esri-widget__heading {
-  color: var(--ant-color-text) !important;
+  color: var(--color-fg-default) !important;
 }
 
 /* Light theme ArcGIS widgets */
@@ -110,6 +87,6 @@ html, body, #root { height: 100%; margin: 0; }
 
 /* Enhanced sider theming */
 .ant-layout-sider {
-  background-color: var(--ant-color-bg-layout) !important;
-  border-right: 1px solid var(--ant-color-border) !important;
+  background-color: var(--color-bg-surface) !important;
+  border-right: 1px solid var(--color-border-default) !important;
 }

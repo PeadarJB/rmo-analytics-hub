@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RMO Pavement Condition Analytics Hub</title>
+    <script>
+      (function() {
+        const stored = localStorage.getItem('rmo-theme') || 'light';
+        document.documentElement.setAttribute('data-theme', stored);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -4,6 +4,7 @@ import { Chart, ChartConfiguration, ChartEvent, ActiveElement } from 'chart.js/a
 import useAppStore from '@/store/useAppStore';
 import { CONFIG, KPI_LABELS, RENDERER_CONFIG, KPI_THRESHOLDS, type KPIKey, getKPIFieldName } from '@/config/appConfig';
 import QueryService from '@/services/QueryService';
+import { getChartThemeColors } from '@/utils/themeHelpers';
 import StatisticsService from '@/services/StatisticsService';
 import type { GroupedConditionStats } from '@/types';
 import Query from '@arcgis/core/rest/support/Query';
@@ -368,9 +369,9 @@ const EnhancedChartPanel: React.FC = () => {
     };
   };
 
-  // Render chart
+  // Render chart - now depends on themeMode to trigger re-render
   useEffect(() => {
-    if (!chartRef.current || loading || error || !groupedData.length) return;
+    if (!chartRef.current || dataStatus !== 'success' || !groupedData.length) return;
 
     const labels = groupedData.map(d => d.group);
     
@@ -424,6 +425,8 @@ const EnhancedChartPanel: React.FC = () => {
       }
     }
 
+    const chartThemeColors = getChartThemeColors();
+
     const config: ChartConfiguration = {
       type: 'bar',
       data: { labels, datasets },
@@ -449,7 +452,7 @@ const EnhancedChartPanel: React.FC = () => {
             labels: {
               padding: 15,
               font: { size: 11 },
-              color: token.colorText
+              color: chartThemeColors.labels
             }
           },
           title: {
@@ -457,12 +460,12 @@ const EnhancedChartPanel: React.FC = () => {
             text: `${KPI_LABELS[activeKpi]} by ${groupByOptions.find(o => o.value === groupBy)?.label || groupBy}${
               selectedSegment ? ` - Filtered to ${selectedSegment.group} (${selectedSegment.condition})` : ''
             }`,
-            color: token.colorText
+            color: chartThemeColors.labels
           },
           tooltip: {
-            backgroundColor: token.colorBgElevated,
-            titleColor: token.colorText,
-            bodyColor: token.colorText,
+            backgroundColor: chartThemeColors.tooltipBg,
+            titleColor: chartThemeColors.labels,
+            bodyColor: chartThemeColors.labels,
             borderColor: token.colorBorder,
             borderWidth: 1,
             callbacks: {
@@ -487,13 +490,13 @@ const EnhancedChartPanel: React.FC = () => {
             title: {
               display: true,
               text: stackedMode ? 'Percentage (%)' : 'Average Value',
-              color: token.colorText
+              color: chartThemeColors.labels
             },
             ticks: {
-              color: token.colorTextSecondary
+              color: chartThemeColors.labels
             },
             grid: {
-              color: token.colorBorderSecondary
+              color: chartThemeColors.gridLines
             }
           },
           y: {
@@ -501,13 +504,13 @@ const EnhancedChartPanel: React.FC = () => {
             title: {
               display: true,
               text: groupByOptions.find(o => o.value === groupBy)?.label || groupBy,
-              color: token.colorText
+              color: chartThemeColors.labels
             },
             ticks: {
-              color: token.colorTextSecondary
+              color: chartThemeColors.labels
             },
             grid: {
-              color: token.colorBorderSecondary
+              color: chartThemeColors.gridLines
             }
           }
         }
@@ -526,7 +529,7 @@ const EnhancedChartPanel: React.FC = () => {
         chartInstance.current = null;
       }
     };
-  }, [groupedData, activeKpi, groupBy, loading, error, token, stackedMode, selectedSegment, highlightedBars, chartSelections, handleChartClick, themeColors]);
+  }, [groupedData, activeKpi, groupBy, dataStatus, token, stackedMode, selectedSegment, highlightedBars, chartSelections, handleChartClick, themeColors, themeMode]);
 
   return (
     <Card 

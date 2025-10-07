@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import useAppStore from '@/store/useAppStore';
-import { theme } from 'antd';
 import Legend from '@arcgis/core/widgets/Legend';
 import LayerList from '@arcgis/core/widgets/LayerList';
 import BasemapGallery from '@arcgis/core/widgets/BasemapGallery';
@@ -8,7 +7,6 @@ import Expand from '@arcgis/core/widgets/Expand';
 
 const MapWidgets: React.FC = () => {
   const { mapView, themeMode } = useAppStore();
-  const { token } = theme.useToken();
 
   useEffect(() => {
     if (!mapView) return;
@@ -23,13 +21,6 @@ const MapWidgets: React.FC = () => {
       container: document.createElement('div')
     });
 
-    // Apply theme styling to legend container
-    if (legend.container) {
-      legend.container.style.backgroundColor = token.colorBgContainer;
-      legend.container.style.color = token.colorText;
-      legend.container.classList.add(`esri-widget--${widgetTheme}`);
-    }
-    
     const list = new LayerList({ 
       view: mapView,
       container: document.createElement('div'),
@@ -45,13 +36,6 @@ const MapWidgets: React.FC = () => {
       }
     });
 
-    // Apply theme styling to layer list container
-    if (list.container) {
-      list.container.style.backgroundColor = token.colorBgContainer;
-      list.container.style.color = token.colorText;
-      list.container.classList.add(`esri-widget--${widgetTheme}`);
-    }
-    
     const gallery = new BasemapGallery({ 
       view: mapView,
       container: document.createElement('div'),
@@ -61,13 +45,6 @@ const MapWidgets: React.FC = () => {
         }
       }
     });
-
-    // Apply theme styling to basemap gallery container
-    if (gallery.container) {
-      gallery.container.style.backgroundColor = token.colorBgContainer;
-      gallery.container.style.color = token.colorText;
-      gallery.container.classList.add(`esri-widget--${widgetTheme}`);
-    }
 
     // Create expand widgets with better configuration
     const exLegend = new Expand({ 
@@ -80,13 +57,6 @@ const MapWidgets: React.FC = () => {
       mode: 'floating'
     });
 
-    // Apply comprehensive theme styling
-    if (exLegend.container) {
-      exLegend.container.style.backgroundColor = token.colorBgElevated;
-      exLegend.container.style.border = `1px solid ${token.colorBorder}`;
-      exLegend.container.style.boxShadow = token.boxShadow;
-    }
-    
     const exList = new Expand({ 
       view: mapView, 
       content: list, 
@@ -128,7 +98,7 @@ const MapWidgets: React.FC = () => {
       exList.destroy(); 
       exGallery.destroy();
     };
-  }, [mapView, themeMode, token]);
+  }, [mapView, themeMode]);
 
   return null;
 };

@@ -1,0 +1,10 @@
+{
+  "extends": "stylelint-config-standard",
+  "rules": {
+    "color-no-hex": true,
+    "function-disallowed-list": ["rgb", "rgba"],
+    "declaration-property-value-disallowed-list": {
+      "/.*/": ["/^#[0-9a-fA-F]{3,6}$/"]
+    }
+  }
+}

@@ -176,19 +176,31 @@ const useAppStore = create<AppState>()(
         laMetricType: 'average',
 
         setError: (err) => set({ error: err }),
-        setThemeMode: (mode) => {
+        setThemeMode: (mode: 'light' | 'dark') => {
           // Set the data-theme attribute on the root element
           document.documentElement.setAttribute('data-theme', mode);
           // Persist the theme choice in localStorage
           localStorage.setItem('rmo-theme', mode);
-          
+
           set({ themeMode: mode });
+    
           // Clear all renderer caches to force re-creation with the new theme
           RendererService.clearCache();
           LARendererService.clearCache();
-          
-          // Update the renderer after a short delay to allow CSS tokens to update
-          setTimeout(() => get().updateRenderer(), 100);
+
+          const { roadLayer, activeKpi, currentFilters, updateLALayerRenderer } = get();
+    
+          // Update road layer renderer
+          if (roadLayer) {
+            const year = currentFilters.year[0] || CONFIG.defaultYears[0];
+            const renderer = RendererService.createRenderer(activeKpi, year, mode);
+            roadLayer.renderer = renderer;
+          }
+    
+          // NEW: Update LA layer renderer when theme changes
+          updateLALayerRenderer();
+    
+          console.log('Theme mode changed to:', mode);
         },
 
         setShowFilters: (b) => set({ showFilters: b, showChart: b ? false : get().showChart }),
@@ -268,12 +280,17 @@ const useAppStore = create<AppState>()(
           get().updateRenderer();
           get().calculateStatistics();
           // Optionally ensure LA layers reflect KPI change:
+          get().updateLALayerRenderer(); // NEW: Update LA layer renderer when KPI changes
           get().updateLALayerVisibility();
         },
 
         setFilters: (f) => {
           const currentFilters = get().currentFilters;
           const newFilters = { ...currentFilters, ...f };
+          
+          // Check if year changed
+          const yearChanged = f.year && 
+            JSON.stringify(f.year) !== JSON.stringify(currentFilters.year);
 
           // Type-check years immediately when set
           if (newFilters.year && Array.isArray(newFilters.year)) {
@@ -299,6 +316,27 @@ const useAppStore = create<AppState>()(
           }
           
           set({ currentFilters: newFilters });
+          
+          const { roadLayer, activeKpi, themeMode, updateLALayerRenderer } = get();
+          
+          // Apply definition expression
+          const definitionExpression = QueryService.buildDefinitionExpression(newFilters);
+          
+          if (roadLayer) {
+            roadLayer.definitionExpression = definitionExpression;
+            console.log('Applied definition expression:', definitionExpression);
+            
+            // Update renderer if year changed
+            if (yearChanged) {
+              const year = newFilters.year[0] || CONFIG.defaultYears[0];
+              // Use createRenderer as requested
+              const renderer = RendererService.createRenderer(activeKpi, year, themeMode);
+              roadLayer.renderer = renderer;
+              
+              // NEW: Update LA layer renderer when year changes
+              updateLALayerRenderer();
+            }
+          }
         },
 
         clearAllFilters: async () => {
@@ -695,26 +733,23 @@ const useAppStore = create<AppState>()(
             console.error('Error calculating statistics:', error);
             message.error('Failed to calculate statistics');
             
+            const year = state.currentFilters.year[0] || CONFIG.defaultYears[0];
             const emptyStats: SummaryStatistics = {
+              kpi: activeKpi.toUpperCase(),
+              year: year,
               totalSegments: 0,
               totalLengthKm: 0,
-              metrics: [{
-                metric: activeKpi.toUpperCase(),
-                average: 0,
-                min: 0,
-                max: 0,
-                veryGoodCount: 0,
-                goodCount: 0,
-                fairCount: 0,
-                poorCount: 0,
-                veryPoorCount: 0,
-                veryGoodPct: 0,
-                goodPct: 0,
-                fairPct: 0,
-                poorPct: 0,
-                veryPoorPct: 0
-              }],
-              lastUpdated: new Date()
+              veryGoodCount: 0,
+              goodCount: 0,
+              fairCount: 0,
+              poorCount: 0,
+              veryPoorCount: 0,
+              veryGoodPct: 0,
+              goodPct: 0,
+              fairPct: 0,
+              poorPct: 0,
+              veryPoorPct: 0,
+              fairOrBetterPct: 0
             };
             set({ currentStats: emptyStats });
           }
@@ -925,18 +960,22 @@ const useAppStore = create<AppState>()(
             console.warn('Cannot update renderer: LA layer not set');
             return;
           }
-
           // Get the active year (use first selected year)
-          const year = currentFilters.year[0] || 2025;
+          const year = currentFilters.year[0] || 2025; // default to 2025
 
-          console.log(`Updating LA renderer: ${activeKpi}/${year}/${laMetricType}`);
+          console.log(`Updating LA renderer: ${activeKpi}/${year}/${laMetricType}/${themeMode}`);
           
-          // NOTE: Actual renderer update will be implemented in Phase 6
-          // For now, just log the intended update
-          console.log('LA renderer update requested - implementation in Phase 6');
-
-          const renderer = LARendererService.createLARenderer(activeKpi, year, laMetricType, themeMode);
-          laLayer.renderer = renderer;
+          try {
+            // Create renderer using LARendererService
+            const renderer = LARendererService.createLARenderer(activeKpi, year, laMetricType, themeMode);
+            
+            // Apply renderer to layer
+            laLayer.renderer = renderer;
+            
+            console.log('✓ LA layer renderer updated successfully');
+          } catch (error) {
+            console.error('Error updating LA layer renderer:', error);
+          }
         },
       }),
       { 

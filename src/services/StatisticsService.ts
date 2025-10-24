@@ -8,7 +8,7 @@ import {
   SEGMENT_LENGTH_KM
 } from '@/config/appConfig';
 import QueryService from './QueryService';
-import type { FilterState, SummaryStatistics, KPIStats, GroupedConditionStats } from '@/types';
+import type { FilterState, SummaryStatistics, GroupedConditionStats } from '@/types';
 
 interface ChartSelection {
   group: string;
@@ -188,28 +188,25 @@ export default class StatisticsService {
     const totalSegments = veryGoodCount + goodCount + fairCount + poorCount + veryPoorCount;
     const totalLengthKm = totalSegments * SEGMENT_LENGTH_KM;
 
-    const pct = (count: number) => totalSegments > 0 ? (count / totalSegments) * 100 : 0;
+    const pct = (count: number) => (totalSegments > 0 ? (count / totalSegments) * 100 : 0);
+    const fairOrBetterCount = veryGoodCount + goodCount + fairCount;
 
     return {
+      kpi: kpi.toUpperCase(),
+      year,
       totalSegments,
       totalLengthKm,
-      metrics: [{
-        metric: kpi.toUpperCase(),
-        average: 0, // Not calculated in this method
-        min: 0,
-        max: 0,
-        veryGoodCount,
-        goodCount,
-        fairCount,
-        poorCount,
-        veryPoorCount,
-        veryGoodPct: pct(veryGoodCount),
-        goodPct: pct(goodCount),
-        fairPct: pct(fairCount),
-        poorPct: pct(poorCount),
-        veryPoorPct: pct(veryPoorCount),
-      }],
-      lastUpdated: new Date()
+      veryGoodCount,
+      goodCount,
+      fairCount,
+      poorCount,
+      veryPoorCount,
+      veryGoodPct: pct(veryGoodCount),
+      goodPct: pct(goodCount),
+      fairPct: pct(fairCount),
+      poorPct: pct(poorCount),
+      veryPoorPct: pct(veryPoorCount),
+      fairOrBetterPct: pct(fairOrBetterCount),
     };
   }
 
@@ -265,7 +262,7 @@ export default class StatisticsService {
     const query = layer.createQuery();
     query.where = `${where} AND ${kpiField} IS NOT NULL`;
     query.outStatistics = statDefinitions;
-
+    
     const result = await layer.queryFeatures(query);
 
     if (result.features.length === 0) {
@@ -282,28 +279,25 @@ export default class StatisticsService {
     const poorCount = attrs.poor_sum || 0;
     const veryPoorCount = attrs.veryPoor_sum || 0;
 
-    const pct = (count: number) => totalSegments > 0 ? (count / totalSegments) * 100 : 0;
+    const pct = (count: number) => (totalSegments > 0 ? (count / totalSegments) * 100 : 0);
+    const fairOrBetterCount = veryGoodCount + goodCount + fairCount;
 
     return {
+      kpi: kpi.toUpperCase(),
+      year,
       totalSegments,
       totalLengthKm,
-      metrics: [{
-        metric: kpi.toUpperCase(),
-        average: 0, // Not calculated in this method
-        min: 0,
-        max: 0,
-        veryGoodCount,
-        goodCount,
-        fairCount,
-        poorCount,
-        veryPoorCount,
-        veryGoodPct: pct(veryGoodCount),
-        goodPct: pct(goodCount),
-        fairPct: pct(fairCount),
-        poorPct: pct(poorCount),
-        veryPoorPct: pct(veryPoorCount),
-      }],
-      lastUpdated: new Date()
+      veryGoodCount,
+      goodCount,
+      fairCount,
+      poorCount,
+      veryPoorCount,
+      veryGoodPct: pct(veryGoodCount),
+      goodPct: pct(goodCount),
+      fairPct: pct(fairCount),
+      poorPct: pct(poorCount),
+      veryPoorPct: pct(veryPoorCount),
+      fairOrBetterPct: pct(fairOrBetterCount),
     };
   }
 
@@ -508,7 +502,7 @@ export default class StatisticsService {
         const stats = result.features[0]?.attributes || {};
         
         const total = stats.total_count || 0;
-        
+        if (total === 0) return null;
         return {
           group: groupValue,
           avgValue: stats.avg_value || 0,
@@ -524,20 +518,36 @@ export default class StatisticsService {
       }));
 
       // Filter out null results and calculate percentages
-      const validStats = groupedStats.filter((stat): stat is GroupedConditionStats => stat !== null);
+      const validStats = groupedStats.filter((stat): stat is NonNullable<typeof stat> => stat !== null);
       
-      validStats.forEach(stat => {
+      return validStats.map(stat => {
         const total = stat.totalCount;
-        if (total > 0) {
-          stat.conditions.veryGood.percentage = (stat.conditions.veryGood.count / total) * 100;
-          stat.conditions.good.percentage = (stat.conditions.good.count / total) * 100;
-          stat.conditions.fair.percentage = (stat.conditions.fair.count / total) * 100;
-          stat.conditions.poor.percentage = (stat.conditions.poor.count / total) * 100;
-          stat.conditions.veryPoor.percentage = (stat.conditions.veryPoor.count / total) * 100;
-        }
-      });
+        const pct = (count: number) => (total > 0 ? (count / total) * 100 : 0);
+        const fairOrBetterCount = stat.conditions.veryGood.count + stat.conditions.good.count + stat.conditions.fair.count;
 
-      return validStats;
+        const summary: SummaryStatistics = {
+          kpi: activeKpi.toUpperCase(),
+          year: year,
+          totalSegments: total,
+          totalLengthKm: total * SEGMENT_LENGTH_KM,
+          veryGoodCount: stat.conditions.veryGood.count,
+          goodCount: stat.conditions.good.count,
+          fairCount: stat.conditions.fair.count,
+          poorCount: stat.conditions.poor.count,
+          veryPoorCount: stat.conditions.veryPoor.count,
+          veryGoodPct: pct(stat.conditions.veryGood.count),
+          goodPct: pct(stat.conditions.good.count),
+          fairPct: pct(stat.conditions.fair.count),
+          poorPct: pct(stat.conditions.poor.count),
+          veryPoorPct: pct(stat.conditions.veryPoor.count),
+          fairOrBetterPct: pct(fairOrBetterCount),
+        };
+
+        return {
+          group: stat.group,
+          stats: summary,
+        };
+      });
 
     } catch (error) {
       console.error('Error computing grouped condition statistics:', error);
@@ -561,27 +571,21 @@ export default class StatisticsService {
     const v = mockValues[activeKpi];
 
     return {
+      kpi: activeKpi.toUpperCase(),
+      year: CONFIG.defaultYears[0],
       totalSegments: 200,
       totalLengthKm: 20, // 200 * 0.1km = 20 km
-      metrics: [{
-        metric: activeKpi.toUpperCase(),
-        average: v.avg,
-        min: v.min,
-        max: v.max,
-
-        veryGoodCount: 60,
-        goodCount: 60,
-        fairCount: 40,
-        poorCount: 30,
-        veryPoorCount: 10,
-
-        veryGoodPct: 30,
-        goodPct: 30,
-        fairPct: 20,
-        poorPct: 15,
-        veryPoorPct: 5
-      }],
-      lastUpdated: new Date()
+      veryGoodCount: 60,
+      goodCount: 60,
+      fairCount: 40,
+      poorCount: 30,
+      veryPoorCount: 10,
+      veryGoodPct: 30,
+      goodPct: 30,
+      fairPct: 20,
+      poorPct: 15,
+      veryPoorPct: 5,
+      fairOrBetterPct: 80,
     };
   }
 
@@ -602,18 +606,10 @@ export default class StatisticsService {
       ? ['Dublin City', 'Cork County', 'Galway County', 'Limerick City']
       : ['R123', 'R456', 'R750', 'R999'];
 
-    return groups.map(g => ({
-      group: g,
-      avgValue: Math.random() * 5 + 2,
-      totalCount: 100,
-      conditions: {
-        veryGood: { count: 20, percentage: 20 },
-        good: { count: 30, percentage: 30 },
-        fair: { count: 25, percentage: 25 },
-        poor: { count: 15, percentage: 15 },
-        veryPoor: { count: 10, percentage: 10 }
-      }
-    }));
+    return groups.map(g => {
+      const stats = this.getPlaceholderStats('iri');
+      return { group: g, stats };
+    });
   }
 
   /**
@@ -621,27 +617,21 @@ export default class StatisticsService {
    */
   private static getEmptyStats(activeKpi: KPIKey): SummaryStatistics {
     return {
+      kpi: activeKpi.toUpperCase(),
+      year: CONFIG.defaultYears[0],
       totalSegments: 0,
       totalLengthKm: 0,
-      metrics: [{
-        metric: activeKpi.toUpperCase(),
-        average: 0,
-        min: 0,
-        max: 0,
-
-        veryGoodCount: 0,
-        goodCount: 0,
-        fairCount: 0,
-        poorCount: 0,
-        veryPoorCount: 0,
-
-        veryGoodPct: 0,
-        goodPct: 0,
-        fairPct: 0,
-        poorPct: 0,
-        veryPoorPct: 0
-      }],
-      lastUpdated: new Date()
+      veryGoodCount: 0,
+      goodCount: 0,
+      fairCount: 0,
+      poorCount: 0,
+      veryPoorCount: 0,
+      veryGoodPct: 0,
+      goodPct: 0,
+      fairPct: 0,
+      poorPct: 0,
+      veryPoorPct: 0,
+      fairOrBetterPct: 0,
     };
   }
 
@@ -893,29 +883,25 @@ export default class StatisticsService {
                   stats.poorCount + stats.veryPoorCount;
     
     const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+    const fairOrBetterCount = (stats.veryGoodCount || 0) + (stats.goodCount || 0) + (stats.fairCount || 0);
 
-    const kpiStats: KPIStats = {
-      metric: primaryKpi.toUpperCase(),
-      average: stats.avgValue || 0,
-      min: stats.minValue || 0,
-      max: stats.maxValue || 0,
+    return {
+      kpi: primaryKpi.toUpperCase(),
+      // Note: Year is ambiguous with multiple selections, using primary result's year
+      year: primaryResult?.year || CONFIG.defaultYears[0],
+      totalSegments,
+      totalLengthKm: Math.round(totalLengthKm * 10) / 10,
       veryGoodCount: stats.veryGoodCount || 0,
       goodCount: stats.goodCount || 0,
       fairCount: stats.fairCount || 0,
       poorCount: stats.poorCount || 0,
       veryPoorCount: stats.veryPoorCount || 0,
-      veryGoodPct: Math.round(pct(stats.veryGoodCount || 0) * 10) / 10,
-      goodPct: Math.round(pct(stats.goodCount || 0) * 10) / 10,
-      fairPct: Math.round(pct(stats.fairCount || 0) * 10) / 10,
-      poorPct: Math.round(pct(stats.poorCount || 0) * 10) / 10,
-      veryPoorPct: Math.round(pct(stats.veryPoorCount || 0) * 10) / 10
-    };
-
-    return {
-      totalSegments,
-      totalLengthKm: Math.round(totalLengthKm * 10) / 10,
-      metrics: [kpiStats],
-      lastUpdated: new Date()
+      veryGoodPct: pct(stats.veryGoodCount || 0),
+      goodPct: pct(stats.goodCount || 0),
+      fairPct: pct(stats.fairCount || 0),
+      poorPct: pct(stats.poorCount || 0),
+      veryPoorPct: pct(stats.veryPoorCount || 0),
+      fairOrBetterPct: pct(fairOrBetterCount),
     };
   }
 

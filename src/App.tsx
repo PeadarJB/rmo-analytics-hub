@@ -7,6 +7,7 @@ import MapWidgets from '@/components/MapWidgets';
 import EnhancedFilterPanel from '@/components/EnhancedFilterPanel';
 import EnhancedStatsPanel from '@/components/EnhancedStatsPanel';
 import EnhancedChartPanel from '@/components/EnhancedChartPanel';
+import LALayerControl from '@/components/LALayerControl';
 import ConditionSummaryPage from '@/pages/ConditionSummaryPage';
 import { CONFIG, KPI_LABELS, type KPIKey } from '@/config/appConfig';
 
@@ -92,6 +93,7 @@ const App: React.FC = () => {
           {showFilters && (
             <div className={styles.filterPanel}>
               <EnhancedFilterPanel />
+              <LALayerControl />
             </div>
           )}
           {showChart && (

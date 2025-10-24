@@ -104,12 +104,99 @@ export const SUBGROUP_FIELD_MAP = {
   'Rural': 50
 };
 
+// Update subgroup mapping - UPDATED FIELD NAMES
 export const SUBGROUP_CODE_TO_FIELD: Record<number, string> = {
-  10: 'Roads_Joined_IsFormerNa',
-  20: 'Roads_Joined_IsDublin',
-  30: 'Roads_Joined_IsCityTown',
-  40: 'Roads_Joined_IsPeat',
+  10: 'IsFormerNa',           // was: 'Roads_Joined_IsFormerNa'
+  20: 'IsDublin',             // was: 'Roads_Joined_IsDublin'
+  30: 'IsCityTown',           // was: 'Roads_Joined_IsCityTown'
+  40: 'IsPeat',               // was: 'Roads_Joined_IsPeat'
   50: 'Rural'
+};
+
+// NEW: LA metric type
+export type LAMetricType = 'average' | 'fairOrBetter';
+
+// NEW: LA field pattern generators
+export const LA_FIELD_PATTERNS = {
+  average: (kpi: KPIKey, year: number): string => {
+    const kpiMap: Record<KPIKey, string> = {
+      'iri': 'iri',
+      'rut': 'rut',
+      'csc': 'csc',
+      'mpd': 'mpd',
+      'psci': 'psci',
+      'lpv3': 'lpv'  // Note: lpv3 → lpv in LA fields
+    };
+    return `avg_${kpiMap[kpi]}_${year}`;
+  },
+  
+  fairOrBetter: (kpi: KPIKey, year: number): string => {
+    const kpiMap: Record<KPIKey, string> = {
+      'iri': 'IRI',
+      'rut': 'RUT',
+      'csc': 'CSC',
+      'mpd': 'MPD',
+      'psci': 'PSCI',
+      'lpv3': 'LPV'
+    };
+    return `${kpiMap[kpi]}_FB_${year}`;
+  }
+};
+
+// NEW: LA layer color gradients (KPI-specific colors)
+export const LA_COLOR_GRADIENTS: Record<KPIKey, Record<string, [number, number, number]>> = {
+  iri: {
+    veryPoor: [100, 70, 110],
+    poor: [120, 90, 130],
+    fair: [145, 115, 155],
+    good: [180, 150, 190],
+    veryGood: [210, 185, 215]
+  },
+  rut: {
+    veryPoor: [235, 140, 120],
+    poor: [240, 155, 135],
+    fair: [245, 170, 150],
+    good: [250, 185, 165],
+    veryGood: [255, 215, 200]
+  },
+  psci: {
+    veryPoor: [180, 100, 50],
+    poor: [210, 120, 60],
+    fair: [230, 140, 75],
+    good: [245, 180, 115],
+    veryGood: [250, 200, 145]
+  },
+  csc: {
+    veryPoor: [180, 175, 110],
+    poor: [200, 195, 140],
+    fair: [225, 220, 175],
+    good: [240, 235, 200],
+    veryGood: [250, 245, 225]
+  },
+  mpd: {
+    poor: [65, 120, 130],      // Only 3 classes for MPD
+    fair: [110, 170, 180],
+    good: [180, 220, 225],
+    veryPoor: [65, 120, 130],  // Duplicate for consistency
+    veryGood: [180, 220, 225]  // Duplicate for consistency
+  },
+  lpv3: {
+    veryPoor: [100, 70, 110],
+    poor: [120, 90, 130],
+    fair: [145, 115, 155],
+    good: [180, 150, 190],
+    veryGood: [210, 185, 215]
+  }
+};
+
+// NEW: LA layer percentage ranges (for Fair or Better mode)
+export const LA_PERCENTAGE_RANGES: Record<KPIKey, { min: number; max: number }> = {
+  iri: { min: 60, max: 90 },
+  rut: { min: 70, max: 100 },
+  psci: { min: 80, max: 100 },
+  csc: { min: 40, max: 100 },
+  mpd: { min: 0, max: 10 },      // Note: shows % POOR (inverse)
+  lpv3: { min: 50, max: 90 }
 };
 
 // Renderer configuration
@@ -179,34 +266,62 @@ export const CONFIG = {
   webMapId: '9aff0a681f67430cad396dc9cac99e05',
   roadNetworkLayerTitle: 'RMO NM 2025',
   roadNetworkLayerSwipeTitle: 'RMO NM 2025',
+  
+  // NEW: LA polygon layer configuration
+  laPolygonLayerTitle: 'RMO_LA_data',
+  
   fields: {
-    iri: 'roads_csv_iri',
-    rut: 'roads_csv_rut',
-    psci: 'roads_csv_psci',
-    csc: 'roads_csv_csc',
-    mpd: 'roads_csv_mpd',
-    lpv3: 'roads_csv_lpv',
-    route: 'Roads_Joined_Route',
-    year: 'SurveyYear',
-    la: 'Roads_Joined_LA',
+    // Raw value fields - UPDATED NAMES
+    iri: 'AIRI',              // was: 'roads_csv_iri'
+    rut: 'LRUT',              // was: 'roads_csv_rut'
+    psci: 'ModeRating',       // was: 'roads_csv_psci'
+    csc: 'CSC',               // unchanged
+    mpd: 'MPD',               // unchanged
+    lpv3: 'LPV3',             // was: 'roads_csv_lpv'
+    
+    // NEW: Pre-calculated class fields
+    iriClass: 'IRI_Class',
+    rutClass: 'Rut_Class',
+    cscClass: 'CSC_Class',
+    psciClass: 'PSCI_Class',
+    mpdClass: 'MPD_Class',
+    lpvClass: 'LPV_Class',
+    
+    // Other fields - UPDATED NAMES
+    route: 'Route',           // was: 'Roads_Joined_Route'
+    year: 'SurveyYear',       // unchanged
+    la: 'LA',                 // was: 'Roads_Joined_LA'
     subgroupPlaceholder: 'RoadGroupCode',
+    
+    // NEW: LA layer fields
+    laCounty: 'OSICB_Boundary_1_COUNTY',
   },
   filters: {
-    localAuthority: { id: 'localAuthority', label: 'Local Authority', field: 'Roads_Joined_LA', type: 'multi-select' as const },
+    localAuthority: { 
+      id: 'localAuthority', 
+      label: 'Local Authority', 
+      field: 'LA',            // was: 'Roads_Joined_LA'
+      type: 'multi-select' as const 
+    },
     subgroup: {
       id: 'subgroup',
       label: 'Road Subgroup',
       field: 'subgroup',
       type: 'multi-select' as const,
       options: [
-        { label: 'Former National', value: 'Roads_Joined_IsFormerNa', code: 10 },
-        { label: 'Dublin', value: 'Roads_Joined_IsDublin', code: 20 },
-        { label: 'City/Town', value: 'Roads_Joined_IsCityTown', code: 30 },
-        { label: 'Peat', value: 'Roads_Joined_IsPeat', code: 40 },
+        { label: 'Former National', value: 'IsFormerNa', code: 10 },     // was: 'Roads_Joined_IsFormerNa'
+        { label: 'Dublin', value: 'IsDublin', code: 20 },                // was: 'Roads_Joined_IsDublin'
+        { label: 'City/Town', value: 'IsCityTown', code: 30 },           // was: 'Roads_Joined_IsCityTown'
+        { label: 'Peat', value: 'IsPeat', code: 40 },                    // was: 'Roads_Joined_IsPeat'
         { label: 'Rural', value: 'Rural', code: 50 }
       ]
     },
-    route: { id: 'route', label: 'Route', field: 'Roads_Joined_Route', type: 'multi-select' as const },
+    route: { 
+      id: 'route', 
+      label: 'Route', 
+      field: 'Route',         // was: 'Roads_Joined_Route'
+      type: 'multi-select' as const 
+    },
     year: {
       id: 'year', label: 'Survey Year', field: 'SurveyYear', type: 'multi-select' as const,
       options: [{ label: '2011', value: 2011 }, { label: '2018', value: 2018 }, { label: '2025', value: 2025 }]
@@ -214,12 +329,24 @@ export const CONFIG = {
   },
   defaultKPI: 'iri' as KPIKey,
   defaultYears: [2025],
-  defaultGroupBy: 'Roads_Joined_LA',
+  defaultGroupBy: 'LA',       // was: 'Roads_Joined_LA'
   map: { center: [-8.0, 53.3] as [number, number], zoom: 7 }
 } as const;
 
-// Helper function to get KPI field name for a specific year
-export function getKPIFieldName(kpi: KPIKey, year: number): string {
+// UPDATED: Helper function to get KPI field name for a specific year
+export function getKPIFieldName(kpi: KPIKey, year: number, useClass: boolean = false): string {
+  if (useClass) {
+    const classFieldMap: Record<KPIKey, string> = {
+      'iri': 'IRI_Class',
+      'rut': 'Rut_Class',
+      'csc': 'CSC_Class',
+      'mpd': 'MPD_Class',
+      'psci': 'PSCI_Class',
+      'lpv3': 'LPV_Class'
+    };
+    return `${classFieldMap[kpi]}_${year}`;
+  }
+  
   const baseField = CONFIG.fields[kpi];
   return `${baseField}_${year}`;
 }

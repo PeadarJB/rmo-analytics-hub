@@ -390,4 +390,39 @@ export default class QueryService {
       return null;
     }
   }
+
+  /**
+   * Zooms the map view to the extent of features matching a given definition expression.
+   * @param mapView - The MapView instance.
+   * @param layer - The FeatureLayer to query.
+   * @param whereClause - The definition expression to filter features.
+   */
+  static async zoomToDefinition(
+    mapView: __esri.MapView | null,
+    layer: __esri.FeatureLayer | null,
+    whereClause: string
+  ): Promise<void> {
+    if (!mapView || !layer) {
+      console.warn('Cannot zoom to definition: MapView or layer is null.');
+      return;
+    }
+
+    try {
+      const query = layer.createQuery();
+      query.where = whereClause;
+      query.returnGeometry = true;
+      query.outFields = []; // No need for fields, just geometry
+
+      const result = await layer.queryExtent(query);
+
+      if (result.extent) {
+        await mapView.goTo(result.extent, { duration: 1000, easing: 'ease-in-out' });
+        console.log('Zoomed to filtered extent.');
+      } else {
+        console.log('No features found for the given definition expression, cannot zoom.');
+      }
+    } catch (error) {
+      console.error('Error zooming to definition:', error);
+    }
+  }
 }

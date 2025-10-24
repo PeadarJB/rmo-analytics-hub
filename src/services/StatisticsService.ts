@@ -355,6 +355,34 @@ export default class StatisticsService {
     }
 
   /**
+   * Computes overall summary statistics for a given KPI and filters.
+   * This method orchestrates the use of pre-calculated class fields or raw value calculations.
+   * @param layer - The FeatureLayer to query.
+   * @param filters - The current filter state.
+   * @param kpi - The active KPI.
+   * @returns A promise that resolves to SummaryStatistics.
+   */
+  static async computeSummary(
+    layer: __esri.FeatureLayer,
+    filters: FilterState,
+    kpi: KPIKey
+  ): Promise<SummaryStatistics> {
+    const year = filters.year.length > 0 ? filters.year[0] : CONFIG.defaultYears[0];
+    
+    // Check if the layer has the pre-calculated class field for the given KPI and year
+    const classFieldName = getKPIFieldName(kpi, year, true);
+    const hasClassField = layer.fields.some(field => field.name === classFieldName);
+
+    if (hasClassField) {
+      console.log(`[StatisticsService] Using class fields for ${kpi} ${year}`);
+      return this.calculateStatsWithClassFields(layer, kpi, year, filters);
+    } else {
+      console.warn(`[StatisticsService] Class field '${classFieldName}' not found. Falling back to raw value calculation for ${kpi} ${year}.`);
+      return this.calculateStatsWithRawValues(layer, kpi, year, filters);
+    }
+  }
+
+  /**
    * Compute grouped statistics for charts (e.g., by Local Authority, Route, etc.)
    */
   static async computeGroupedStatistics(

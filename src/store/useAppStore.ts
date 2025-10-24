@@ -4,7 +4,7 @@ import type MapView from '@arcgis/core/views/MapView';
 import type WebMap from '@arcgis/core/WebMap';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import type Extent from '@arcgis/core/geometry/Extent';
-import { message } from 'antd';
+import { message } from 'antd'; // ADD LAMetricType
 import { 
   CONFIG, 
   KPI_LABELS, 
@@ -12,8 +12,10 @@ import {
   LA_LAYER_CONFIG,
   SUBGROUP_CODE_TO_FIELD, 
   SubgroupOption 
+  , LAMetricType
 } from '@/config/appConfig';
 import MapViewService from '@/services/MapViewService';
+import LARendererService from '@/services/LARendererService';
 import QueryService from '@/services/QueryService';
 import StatisticsService from '@/services/StatisticsService';
 import RendererService from '@/services/RendererService';
@@ -68,6 +70,11 @@ interface AppState {
   chartFilteredStats: SummaryStatistics | null;
   isCalculatingChartStats: boolean;
 
+  // NEW: LA Layer State
+  laLayer: __esri.FeatureLayer | null;
+  laLayerVisible: boolean;
+  laMetricType: LAMetricType;
+
   // Actions
   initializeMap: (containerId: string) => Promise<void>;
   setError: (err: string | null) => void;
@@ -102,10 +109,13 @@ interface AppState {
   setCurrentPage: (page: 'overview' | 'condition-summary') => void;
   setSwipeYears: (left: number, right: number) => void;
   updateLALayerVisibility: () => void;
-  // ADD THIS NEW HELPER METHOD DECLARATION:
   setLaLayersVisibility: (visible: boolean) => void;
-  
-  // ADD THESE TWO MISSING METHOD DECLARATIONS:
+
+  // NEW: LA Layer Methods
+  setLALayer: (layer: __esri.FeatureLayer | null) => void;
+  setLALayerVisible: (visible: boolean) => void;
+  setLAMetricType: (metricType: LAMetricType) => void;
+  updateLALayerRenderer: () => void;
   enterSwipeMode: () => void;
   exitSwipeMode: () => void;
 }
@@ -160,6 +170,11 @@ const useAppStore = create<AppState>()(
         chartFilteredStats: null,
         isCalculatingChartStats: false,
 
+        // NEW: LA Layer Initial State
+        laLayer: null,
+        laLayerVisible: false,
+        laMetricType: 'average',
+
         setError: (err) => set({ error: err }),
         setThemeMode: (mode) => {
           // Set the data-theme attribute on the root element
@@ -168,10 +183,9 @@ const useAppStore = create<AppState>()(
           localStorage.setItem('rmo-theme', mode);
           
           set({ themeMode: mode });
-          
-          // Clear the renderer cache for the *previous* theme to force re-creation
-          const previousTheme = mode === 'light' ? 'dark' : 'light';
-          RendererService.clearThemeCache(previousTheme);
+          // Clear all renderer caches to force re-creation with the new theme
+          RendererService.clearCache();
+          LARendererService.clearCache();
           
           // Update the renderer after a short delay to allow CSS tokens to update
           setTimeout(() => get().updateRenderer(), 100);
@@ -623,7 +637,7 @@ const useAppStore = create<AppState>()(
             await roadLayer.when();
             
             // THEN zoom to the filtered extent
-            await QueryService.zoomToDefinition(state.mapView, roadLayer, where);
+            await QueryService.zoomToDefinition(state.mapView, roadLayer, where); // Fixed: Added zoomToDefinition to QueryService
             
             // THEN update renderer (this will refresh the layer)
             state.updateRenderer();
@@ -652,7 +666,7 @@ const useAppStore = create<AppState>()(
             console.warn('[Statistics] Cannot calculate - road layer not loaded');
             return;
           }
-          
+
           // (3) Validate and guard before stats
           const validatedFilters = state.validateAndFixFilters();
           if (!validatedFilters.year.length || validatedFilters.year.some(y => typeof y !== 'number')) {
@@ -662,7 +676,7 @@ const useAppStore = create<AppState>()(
           
           try {
             const stats = await StatisticsService.computeSummary(
-              roadLayer, 
+              roadLayer, // Fixed: Added computeSummary to StatisticsService
               validatedFilters, 
               activeKpi
             );
@@ -855,7 +869,75 @@ const useAppStore = create<AppState>()(
           setTimeout(() => {
             state.calculateChartFilteredStatistics();
           }, 100);
-        }
+        }, // Fixed: Added missing comma
+
+        // ========================================
+        // LA LAYER MANAGEMENT
+        // ========================================
+
+        /**
+         * Set the LA polygon layer reference
+         */
+        setLALayer: (layer: __esri.FeatureLayer | null) => {
+          console.log('Setting LA layer:', layer?.title);
+          set({ laLayer: layer });
+          
+          // Apply initial renderer if layer exists
+          if (layer) {
+            const { updateLALayerRenderer } = get();
+            updateLALayerRenderer();
+          }
+        },
+
+        /**
+         * Toggle LA layer visibility
+         */
+        setLALayerVisible: (visible: boolean) => {
+          const { laLayer } = get();
+          
+          set({ laLayerVisible: visible });
+          
+          if (laLayer) {
+            laLayer.visible = visible;
+            console.log(`LA layer visibility set to: ${visible}`);
+          }
+        },
+
+        /**
+         * Change LA layer metric type (average vs fairOrBetter)
+         */
+        setLAMetricType: (metricType: LAMetricType) => {
+          set({ laMetricType: metricType });
+          
+          // Update renderer when metric type changes
+          const { updateLALayerRenderer } = get();
+          updateLALayerRenderer();
+        },
+
+        /**
+         * Update LA layer renderer based on current KPI, year, and metric type
+         * This method will be implemented in Phase 6 when we integrate the renderer
+         */
+        updateLALayerRenderer: () => {
+          const { laLayer, activeKpi, currentFilters, laMetricType, themeMode } = get();
+          
+          if (!laLayer) {
+            console.warn('Cannot update renderer: LA layer not set');
+            return;
+          }
+
+          // Get the active year (use first selected year)
+          const year = currentFilters.year[0] || 2025;
+
+          console.log(`Updating LA renderer: ${activeKpi}/${year}/${laMetricType}`);
+          
+          // NOTE: Actual renderer update will be implemented in Phase 6
+          // For now, just log the intended update
+          console.log('LA renderer update requested - implementation in Phase 6');
+
+          const renderer = LARendererService.createLARenderer(activeKpi, year, laMetricType, themeMode);
+          laLayer.renderer = renderer;
+        },
       }),
       { 
         name: 'rmo-app',

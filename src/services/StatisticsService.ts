@@ -5,8 +5,9 @@ import {
   KPIKey,
   KPI_THRESHOLDS,
   getKPIFieldName,
-  SEGMENT_LENGTH_METERS
+  SEGMENT_LENGTH_KM
 } from '@/config/appConfig';
+import QueryService from './QueryService';
 import type { FilterState, SummaryStatistics, KPIStats, GroupedConditionStats } from '@/types';
 
 interface ChartSelection {
@@ -21,233 +22,67 @@ interface ChartSelection {
  * Uses centralized thresholds from appConfig and optimized queries.
  */
 export default class StatisticsService {
-  /**
-   * Compute summary statistics for the selected filters and KPI
-   * Focuses on single-year analysis (multi-year display handled in UI)
-   */
-  static async computeSummary(
-    layer: FeatureLayer | null,
-    filters: FilterState,
-    activeKpi: KPIKey
-  ): Promise<SummaryStatistics> {
-    // Return placeholder when no layer is available
-    if (!layer) {
-      return this.getPlaceholderStats(activeKpi);
-    }
-
-    // Validate year early
-    {
-      const year = filters.year.length > 0 ? filters.year[0] : CONFIG.defaultYears[0];
-      if (typeof year !== 'number') {
-        console.error(`[StatisticsService] Year must be a number, received: ${typeof year}`, year);
-        return this.getEmptyStats(activeKpi);
-      }
-      console.log(`[StatisticsService] Computing stats for ${activeKpi} in year ${year}`);
-    }
-
-    try {
-      const year = filters.year.length > 0 ? filters.year[0] : CONFIG.defaultYears[0];
-      if (typeof year !== 'number') {
-        console.error(`[StatisticsService] Year must be a number, received: ${typeof year}`, year);
-        return this.getEmptyStats(activeKpi);
-      }
-      console.log(`[StatisticsService] Computing stats for ${activeKpi} in year ${year}`);
-
-      const kpiField = getKPIFieldName(activeKpi, year);
-
-      // Build where clause based on current definition expression
-      const baseWhere = (layer as any).definitionExpression || '1=1';
-      const whereClause = `(${baseWhere}) AND ${kpiField} IS NOT NULL`;
-
-      console.log(`[StatisticsService] Query where clause: ${whereClause}`);
-
-      // Execute optimized query for both statistics and condition counts (5-class)
-      const results = await this.executeOptimizedQuery(
-        layer,
-        whereClause,
-        kpiField,
-        activeKpi
-      );
-
-      if (!results) {
-        console.warn('[StatisticsService] Query returned no results');
-        return this.getEmptyStats(activeKpi);
-      }
-
-      console.log(`[StatisticsService] Query results:`, results);
-
-      // Total length derived from segment count * constant segment length (m -> km)
-      const totalLengthKm = (results.totalSegments || 0) * SEGMENT_LENGTH_METERS / 1000;
-
-      // 5-class percentages
-      const total =
-        results.veryGoodCount +
-        results.goodCount +
-        results.fairCount +
-        results.poorCount +
-        results.veryPoorCount;
-
-      const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
-      const veryGoodPct = pct(results.veryGoodCount);
-      const goodPct = pct(results.goodCount);
-      const fairPct = pct(results.fairCount);
-      const poorPct = pct(results.poorCount);
-      const veryPoorPct = pct(results.veryPoorCount);
-
-      const kpiStats: KPIStats = {
-        metric: activeKpi.toUpperCase(),
-        average: results.avgValue || 0,
-        min: results.minValue || 0,
-        max: results.maxValue || 0,
-
-        veryGoodCount: results.veryGoodCount,
-        goodCount: results.goodCount,
-        fairCount: results.fairCount,
-        poorCount: results.poorCount,
-        veryPoorCount: results.veryPoorCount,
-
-        veryGoodPct: Math.round(veryGoodPct * 10) / 10,
-        goodPct: Math.round(goodPct * 10) / 10,
-        fairPct: Math.round(fairPct * 10) / 10,
-        poorPct: Math.round(poorPct * 10) / 10,
-        veryPoorPct: Math.round(veryPoorPct * 10) / 10
-      };
-
-      return {
-        totalSegments: results.totalSegments || 0,
-        totalLengthKm: Math.round(totalLengthKm * 10) / 10,
-        metrics: [kpiStats],
-        lastUpdated: new Date()
-      };
-    } catch (error) {
-      console.error('Error computing statistics:', error);
-      return this.getPlaceholderStats(activeKpi);
-    }
-  }
 
   /**
-   * Execute an optimized single query for all statistics and 5-class condition counts
+   * Helper: Get CASE expressions for classifying KPI values
+   * Updated with correct PSCI classification (4 classes)
    */
-  private static async executeOptimizedQuery(
-    layer: FeatureLayer,
-    whereClause: string,
-    kpiField: string,
-    activeKpi: KPIKey
-  ): Promise<any> {
-    const statsQuery = layer.createQuery();
-    statsQuery.where = whereClause;
-    statsQuery.returnGeometry = false;
-
-    // Get thresholds for this KPI
-    const thresholds = KPI_THRESHOLDS[activeKpi];
-
-    // Build CASE expressions for 5-class counting
-    const conditionExpressions = this.buildConditionExpressions(kpiField, activeKpi, thresholds);
-
-    // Define comprehensive statistics in a single query
-    statsQuery.outStatistics = [
-      // Basic statistics
-      { onStatisticField: kpiField, outStatisticFieldName: 'avg_value', statisticType: 'avg' },
-      { onStatisticField: kpiField, outStatisticFieldName: 'min_value', statisticType: 'min' },
-      { onStatisticField: kpiField, outStatisticFieldName: 'max_value', statisticType: 'max' },
-      { onStatisticField: kpiField, outStatisticFieldName: 'count_segments', statisticType: 'count' },
-
-      // 5-class counts
-      { onStatisticField: conditionExpressions.veryGood, outStatisticFieldName: 'very_good_count', statisticType: 'sum' },
-      { onStatisticField: conditionExpressions.good, outStatisticFieldName: 'good_count', statisticType: 'sum' },
-      { onStatisticField: conditionExpressions.fair, outStatisticFieldName: 'fair_count', statisticType: 'sum' },
-      { onStatisticField: conditionExpressions.poor, outStatisticFieldName: 'poor_count', statisticType: 'sum' },
-      { onStatisticField: conditionExpressions.veryPoor, outStatisticFieldName: 'very_poor_count', statisticType: 'sum' }
-    ] as any;
-
-    try {
-      const result = await layer.queryFeatures(statsQuery);
-      if (!result.features.length) return null;
-
-      const stats = result.features[0].attributes;
-
-      return {
-        avgValue: stats.avg_value,
-        minValue: stats.min_value,
-        maxValue: stats.max_value,
-        totalSegments: stats.count_segments,
-
-        veryGoodCount: Math.round(stats.very_good_count || 0),
-        goodCount: Math.round(stats.good_count || 0),
-        fairCount: Math.round(stats.fair_count || 0),
-        poorCount: Math.round(stats.poor_count || 0),
-        veryPoorCount: Math.round(stats.very_poor_count || 0)
-      };
-    } catch (error) {
-      console.error('Error executing optimized query:', error);
-      console.log('Query details:', { whereClause, kpiField, activeKpi });
-
-      // Fallback to separate queries (kept 3-class for resilience)
-      return this.executeFallbackQueries(layer, whereClause, kpiField, activeKpi);
-    }
-  }
-
-  /**
-   * Build SQL CASE expressions for 5-class condition counts.
-   * Boundaries are inclusive/exclusive to avoid gaps/overlaps per report definitions.
-   */
-  private static buildConditionExpressions(
-    kpiField: string,
+  private static getClassificationExpressions(
     kpi: KPIKey,
-    thresholds: typeof KPI_THRESHOLDS[KPIKey]
+    kpiField: string
   ): { veryGood: string; good: string; fair: string; poor: string; veryPoor: string } {
+    const thresholds = KPI_THRESHOLDS[kpi];
+
     // Lower-is-better KPIs
     if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
-      const vg = thresholds.veryGood!;
+      const vg = thresholds.veryGood || thresholds.good;
       const g = thresholds.good;
       const f = thresholds.fair;
-      const p = thresholds.poor!;
+      const p = thresholds.poor || f;
       return {
         veryGood: `CASE WHEN ${kpiField} < ${vg} THEN 1 ELSE 0 END`,
         good:     `CASE WHEN ${kpiField} >= ${vg} AND ${kpiField} < ${g} THEN 1 ELSE 0 END`,
         fair:     `CASE WHEN ${kpiField} >= ${g} AND ${kpiField} < ${f} THEN 1 ELSE 0 END`,
         poor:     `CASE WHEN ${kpiField} >= ${f} AND ${kpiField} < ${p} THEN 1 ELSE 0 END`,
-        veryPoor: `CASE WHEN ${kpiField} >= ${p} THEN 1 ELSE 0 END`
+        veryPoor: `CASE WHEN ${kpiField} >= ${p} THEN 1 ELSE 0 END`,
       };
     }
 
     // CSC (higher is better, inverted)
     if (kpi === 'csc') {
-      const vg = thresholds.good;      // > 0.50
-      const g  = thresholds.fair;      // >= 0.45
-      const f  = thresholds.poor!;     // >= 0.40
+      const vg = thresholds.good;      // >= 0.50
+      const g = thresholds.fair;       // >= 0.45
+      const f = thresholds.poor!;      // >= 0.40
       const vp = thresholds.veryPoor!; // <= 0.35
       return {
         veryGood: `CASE WHEN ${kpiField} > ${vg} THEN 1 ELSE 0 END`,
         good:     `CASE WHEN ${kpiField} > ${g}  AND ${kpiField} <= ${vg} THEN 1 ELSE 0 END`,
         fair:     `CASE WHEN ${kpiField} > ${f}  AND ${kpiField} <= ${g}  THEN 1 ELSE 0 END`,
         poor:     `CASE WHEN ${kpiField} > ${vp} AND ${kpiField} <= ${f}  THEN 1 ELSE 0 END`,
-        veryPoor: `CASE WHEN ${kpiField} <= ${vp} THEN 1 ELSE 0 END`
+        veryPoor: `CASE WHEN ${kpiField} <= ${vp} THEN 1 ELSE 0 END`,
       };
     }
 
-    // PSCI (app 5-bucket convention)
+    // PSCI (4 classes: 9-10, 7-8, 5-6, 1-4)
     if (kpi === 'psci') {
       return {
-        veryGood: `CASE WHEN ${kpiField} > 8 THEN 1 ELSE 0 END`,
-        good:     `CASE WHEN ${kpiField} > 6 AND ${kpiField} <= 8 THEN 1 ELSE 0 END`,
-        fair:     `CASE WHEN ${kpiField} > 4 AND ${kpiField} <= 6 THEN 1 ELSE 0 END`,
-        poor:     `CASE WHEN ${kpiField} > 2 AND ${kpiField} <= 4 THEN 1 ELSE 0 END`,
-        veryPoor: `CASE WHEN ${kpiField} <= 2 THEN 1 ELSE 0 END`
+        veryGood: `CASE WHEN ${kpiField} >= 9 THEN 1 ELSE 0 END`,
+        good:     `CASE WHEN ${kpiField} >= 7 AND ${kpiField} < 9 THEN 1 ELSE 0 END`,
+        fair:     `CASE WHEN ${kpiField} >= 5 AND ${kpiField} < 7 THEN 1 ELSE 0 END`,
+        poor:     `CASE WHEN ${kpiField} >= 1 AND ${kpiField} < 5 THEN 1 ELSE 0 END`,
+        veryPoor: `CASE WHEN 1=0 THEN 1 ELSE 0 END`  // No class 5 for PSCI
       };
     }
 
-    // MPD (keep 3 buckets but map to 5-class endpoints)
+    // MPD (3 classes: Good, Fair, Poor)
     if (kpi === 'mpd') {
       const good = thresholds.good; // >= 0.7
-      const fair = thresholds.fair; // >= 0.65
-      const poor = thresholds.poor; // < 0.6
+      const poor = thresholds.poor!; // < 0.6
       return {
-        // collapse to ends/middle to fit 5 counters
         veryGood: `CASE WHEN ${kpiField} >= ${good} THEN 1 ELSE 0 END`,
-        good:     `CASE WHEN 1=0 THEN 1 ELSE 0 END`,
-        fair:     `CASE WHEN ${kpiField} >= ${fair} AND ${kpiField} < ${good} THEN 1 ELSE 0 END`,
-        poor:     `CASE WHEN 1=0 THEN 1 ELSE 0 END`,
+        good:     `CASE WHEN 1=0 THEN 1 ELSE 0 END`,  // No separate good class
+        fair:     `CASE WHEN ${kpiField} >= ${poor} AND ${kpiField} < ${good} THEN 1 ELSE 0 END`,
+        poor:     `CASE WHEN 1=0 THEN 1 ELSE 0 END`,  // No separate poor class
         veryPoor: `CASE WHEN ${kpiField} < ${poor} THEN 1 ELSE 0 END`
       };
     }
@@ -263,82 +98,205 @@ export default class StatisticsService {
   }
 
   /**
-   * Fallback method (3-class) using separate queries if CASE expressions aren't supported.
-   * Keeps app functioning, though percentages will reflect 3-class in this code path.
+   * NEW: Calculate statistics using pre-calculated class fields
+   * Much faster than raw value calculations
    */
-  private static async executeFallbackQueries(
-    layer: FeatureLayer,
-    baseWhere: string,
-    kpiField: string,
-    activeKpi: KPIKey
-  ): Promise<any> {
-    const statsQuery = layer.createQuery();
-    statsQuery.where = baseWhere;
-    statsQuery.returnGeometry = false;
-    statsQuery.outStatistics = [
-      { onStatisticField: kpiField, outStatisticFieldName: 'avg_value', statisticType: 'avg' },
-      { onStatisticField: kpiField, outStatisticFieldName: 'min_value', statisticType: 'min' },
-      { onStatisticField: kpiField, outStatisticFieldName: 'max_value', statisticType: 'max' },
-      { onStatisticField: kpiField, outStatisticFieldName: 'count_segments', statisticType: 'count' }
-    ] as any;
+  private static async calculateStatsWithClassFields(
+    layer: __esri.FeatureLayer,
+    kpi: KPIKey,
+    year: number,
+    filters: FilterState
+  ): Promise<SummaryStatistics> {
+    const classFieldName = getKPIFieldName(kpi, year, true);  // Get class field name
+    const where = QueryService.buildDefinitionExpression(filters);
 
-    const statsResult = await layer.queryFeatures(statsQuery);
-    const stats = statsResult.features[0]?.attributes || {};
+    // Build statistics definition for class field counts
+    const statDefinitions = [];
 
-    const conditionCounts = await this.getConditionCountsFallback(
-      layer,
-      baseWhere,
-      kpiField,
-      activeKpi
-    );
+    // Handle KPI-specific class counts
+    if (kpi === 'psci') {
+      // PSCI: 4 classes (1-4)
+      statDefinitions.push(
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class1_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class2_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class3_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class4_count', statisticType: 'count' as const }
+      );
+    } else if (kpi === 'mpd') {
+      // MPD: 3 classes (1-3)
+      statDefinitions.push(
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class1_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class2_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class3_count', statisticType: 'count' as const }
+      );
+    } else {
+      // Standard 5 classes (1-5)
+      statDefinitions.push(
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class1_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class2_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class3_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class4_count', statisticType: 'count' as const },
+        { onStatisticField: classFieldName, outStatisticFieldName: 'class5_count', statisticType: 'count' as const }
+      );
+    }
 
-    // Map 3-class to 5-class shape (collapse ends/middle)
+    // Create query with grouping by class value
+    const query = layer.createQuery();
+    query.where = `${where} AND ${classFieldName} IS NOT NULL`;
+    query.outStatistics = statDefinitions;
+    query.groupByFieldsForStatistics = [classFieldName];
+
+    const result = await layer.queryFeatures(query);
+
+    // Parse results into counts by class
+    let veryGoodCount = 0;
+    let goodCount = 0;
+    let fairCount = 0;
+    let poorCount = 0;
+    let veryPoorCount = 0;
+
+    result.features.forEach(feature => {
+      const classValue = feature.attributes[classFieldName];
+      const count = feature.attributes['class1_count'] || 
+                    feature.attributes['class2_count'] || 
+                    feature.attributes['class3_count'] || 
+                    feature.attributes['class4_count'] || 
+                    feature.attributes['class5_count'] || 0;
+
+      if (kpi === 'psci') {
+        // PSCI: 4 classes
+        if (classValue === 1) veryGoodCount = count;
+        else if (classValue === 2) goodCount = count;
+        else if (classValue === 3) fairCount = count;
+        else if (classValue === 4) poorCount = count;
+      } else if (kpi === 'mpd') {
+        // MPD: 3 classes (map to 5-class structure)
+        if (classValue === 1) veryGoodCount = count;      // Good → Very Good
+        else if (classValue === 2) fairCount = count;     // Fair → Fair
+        else if (classValue === 3) veryPoorCount = count; // Poor → Very Poor
+      } else {
+        // Standard 5 classes
+        if (classValue === 1) veryGoodCount = count;
+        else if (classValue === 2) goodCount = count;
+        else if (classValue === 3) fairCount = count;
+        else if (classValue === 4) poorCount = count;
+        else if (classValue === 5) veryPoorCount = count;
+      }
+    });
+
+    // Calculate totals and percentages
+    const totalSegments = veryGoodCount + goodCount + fairCount + poorCount + veryPoorCount;
+    const totalLengthKm = totalSegments * SEGMENT_LENGTH_KM;
+
+    const pct = (count: number) => totalSegments > 0 ? (count / totalSegments) * 100 : 0;
+
     return {
-      avgValue: stats.avg_value,
-      minValue: stats.min_value,
-      maxValue: stats.max_value,
-      totalSegments: stats.count_segments,
-
-      veryGoodCount: 0,
-      goodCount: conditionCounts.good,
-      fairCount: conditionCounts.fair,
-      poorCount: conditionCounts.poor,
-      veryPoorCount: 0
+      kpi,
+      year,
+      totalSegments,
+      totalLengthKm,
+      veryGoodCount,
+      goodCount,
+      fairCount,
+      poorCount,
+      veryPoorCount,
+      veryGoodPct: pct(veryGoodCount),
+      goodPct: pct(goodCount),
+      fairPct: pct(fairCount),
+      poorPct: pct(poorCount),
+      veryPoorPct: pct(veryPoorCount),
+      fairOrBetterPct: pct(veryGoodCount + goodCount + fairCount)
     };
   }
 
-  private static async getConditionCountsFallback(
-    layer: FeatureLayer,
-    baseWhere: string,
-    kpiField: string,
-    activeKpi: KPIKey
-  ): Promise<{ good: number; fair: number; poor: number }> {
-    const thresholds = KPI_THRESHOLDS[activeKpi];
+  /**
+   * FALLBACK: Calculate statistics using raw values with threshold calculations
+   * Used when class fields are not available
+   */
+  private static async calculateStatsWithRawValues(
+    layer: __esri.FeatureLayer,
+    kpi: KPIKey,
+    year: number,
+    filters: FilterState
+  ): Promise<SummaryStatistics> {
+    const kpiField = getKPIFieldName(kpi, year, false);  // Get raw field name
+    const where = QueryService.buildDefinitionExpression(filters);
 
-    const whereGood = this.buildConditionWhere(baseWhere, kpiField, activeKpi, 'good', thresholds);
-    const whereFair = this.buildConditionWhere(baseWhere, kpiField, activeKpi, 'fair', thresholds);
-    const wherePoor = this.buildConditionWhere(baseWhere, kpiField, activeKpi, 'poor', thresholds);
+    // Get classification expressions
+    const classExpressions = this.getClassificationExpressions(kpi, kpiField);
 
-    const [goodResult, fairResult, poorResult] = await Promise.all([
-      this.executeCountQuery(layer, whereGood),
-      this.executeCountQuery(layer, whereFair),
-      this.executeCountQuery(layer, wherePoor)
-    ]);
+    const statDefinitions = [
+      { 
+        onStatisticField: '1', 
+        outStatisticFieldName: 'total_count', 
+        statisticType: 'count' as const 
+      },
+      { 
+        onStatisticField: classExpressions.veryGood, 
+        outStatisticFieldName: 'veryGood_sum', 
+        statisticType: 'sum' as const 
+      },
+      { 
+        onStatisticField: classExpressions.good, 
+        outStatisticFieldName: 'good_sum', 
+        statisticType: 'sum' as const 
+      },
+      { 
+        onStatisticField: classExpressions.fair, 
+        outStatisticFieldName: 'fair_sum', 
+        statisticType: 'sum' as const 
+      },
+      { 
+        onStatisticField: classExpressions.poor, 
+        outStatisticFieldName: 'poor_sum', 
+        statisticType: 'sum' as const 
+      },
+      { 
+        onStatisticField: classExpressions.veryPoor, 
+        outStatisticFieldName: 'veryPoor_sum', 
+        statisticType: 'sum' as const 
+      }
+    ];
 
-    return { good: goodResult, fair: fairResult, poor: poorResult };
-  }
+    const query = layer.createQuery();
+    query.where = `${where} AND ${kpiField} IS NOT NULL`;
+    query.outStatistics = statDefinitions;
 
-  private static async executeCountQuery(layer: FeatureLayer, where: string): Promise<number> {
-    try {
-      const query = layer.createQuery();
-      query.where = where;
-      query.returnGeometry = false;
-      const result = await layer.queryFeatureCount(query);
-      return result || 0;
-    } catch (error) {
-      console.error('Count query error:', error);
-      return 0;
+    const result = await layer.queryFeatures(query);
+
+    if (result.features.length === 0) {
+      return this.getEmptyStats(kpi);
     }
+
+    const attrs = result.features[0].attributes;
+    const totalSegments = attrs.total_count || 0;
+    const totalLengthKm = totalSegments * SEGMENT_LENGTH_KM;
+
+    const veryGoodCount = attrs.veryGood_sum || 0;
+    const goodCount = attrs.good_sum || 0;
+    const fairCount = attrs.fair_sum || 0;
+    const poorCount = attrs.poor_sum || 0;
+    const veryPoorCount = attrs.veryPoor_sum || 0;
+
+    const pct = (count: number) => totalSegments > 0 ? (count / totalSegments) * 100 : 0;
+
+    return {
+      kpi,
+      year,
+      totalSegments,
+      totalLengthKm,
+      veryGoodCount,
+      goodCount,
+      fairCount,
+      poorCount,
+      veryPoorCount,
+      veryGoodPct: pct(veryGoodCount),
+      goodPct: pct(goodCount),
+      fairPct: pct(fairCount),
+      poorPct: pct(poorCount),
+      veryPoorPct: pct(veryPoorCount),
+      fairOrBetterPct: pct(veryGoodCount + goodCount + fairCount)
+    };
   }
 
   private static buildConditionWhere(
@@ -451,7 +409,7 @@ export default class StatisticsService {
       const kpiField = getKPIFieldName(activeKpi, year);
       const baseWhere = (layer as any).definitionExpression || '1=1';
       const whereClause = `(${baseWhere}) AND ${kpiField} IS NOT NULL`;
-
+      
       let groups: string[];
       
       // CRITICAL FIX: Handle subgroup specially
@@ -494,7 +452,7 @@ export default class StatisticsService {
         }
         
         // Build condition expressions for this KPI
-        const conditionExpressions = this.buildConditionExpressions(kpiField, activeKpi, KPI_THRESHOLDS[activeKpi]);
+        const conditionExpressions = this.getClassificationExpressions(activeKpi, kpiField);
         
         // Query for condition counts
         const statsQuery = layer.createQuery();
@@ -503,11 +461,11 @@ export default class StatisticsService {
         statsQuery.outStatistics = [
           { onStatisticField: kpiField, outStatisticFieldName: 'avg_value', statisticType: 'avg' },
           { onStatisticField: kpiField, outStatisticFieldName: 'total_count', statisticType: 'count' },
-          { onStatisticField: conditionExpressions.veryGood, outStatisticFieldName: 'very_good_count', statisticType: 'sum' },
-          { onStatisticField: conditionExpressions.good, outStatisticFieldName: 'good_count', statisticType: 'sum' },
-          { onStatisticField: conditionExpressions.fair, outStatisticFieldName: 'fair_count', statisticType: 'sum' },
-          { onStatisticField: conditionExpressions.poor, outStatisticFieldName: 'poor_count', statisticType: 'sum' },
-          { onStatisticField: conditionExpressions.veryPoor, outStatisticFieldName: 'very_poor_count', statisticType: 'sum' }
+          { onStatisticField: conditionExpressions.veryGood, outStatisticFieldName: 'veryGood_sum', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.good, outStatisticFieldName: 'good_sum', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.fair, outStatisticFieldName: 'fair_sum', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.poor, outStatisticFieldName: 'poor_sum', statisticType: 'sum' },
+          { onStatisticField: conditionExpressions.veryPoor, outStatisticFieldName: 'veryPoor_sum', statisticType: 'sum' }
         ] as any;
 
         const result = await layer.queryFeatures(statsQuery);
@@ -520,11 +478,11 @@ export default class StatisticsService {
           avgValue: stats.avg_value || 0,
           totalCount: total,
           conditions: {
-            veryGood: { count: stats.very_good_count || 0, percentage: 0 },
-            good: { count: stats.good_count || 0, percentage: 0 },
-            fair: { count: stats.fair_count || 0, percentage: 0 },
-            poor: { count: stats.poor_count || 0, percentage: 0 },
-            veryPoor: { count: stats.very_poor_count || 0, percentage: 0 }
+            veryGood: { count: stats.veryGood_sum || 0, percentage: 0 },
+            good: { count: stats.good_sum || 0, percentage: 0 },
+            fair: { count: stats.fair_sum || 0, percentage: 0 },
+            poor: { count: stats.poor_sum || 0, percentage: 0 },
+            veryPoor: { count: stats.veryPoor_sum || 0, percentage: 0 }
           }
         };
       }));
@@ -568,7 +526,7 @@ export default class StatisticsService {
 
     return {
       totalSegments: 200,
-      totalLengthKm: 20, // 200 * 100m = 20 km
+      totalLengthKm: 20, // 200 * 0.1km = 20 km
       metrics: [{
         metric: activeKpi.toUpperCase(),
         average: v.avg,
@@ -735,7 +693,7 @@ export default class StatisticsService {
     const combinedWhere = `(${selectionClauses.join(' OR ')}) AND ${kpiField} IS NOT NULL`;
     
     console.log('[Chart Stats] Query WHERE:', combinedWhere);
-
+    
     // Execute the aggregated query
     const results = await this.executeOptimizedQuery(layer, combinedWhere, kpiField, kpi);
     
@@ -743,7 +701,7 @@ export default class StatisticsService {
       kpi,
       year,
       totalSegments: results?.totalSegments || 0,
-      totalLengthKm: (results?.totalSegments || 0) * SEGMENT_LENGTH_METERS / 1000,
+      totalLengthKm: (results?.totalSegments || 0) * SEGMENT_LENGTH_KM,
       stats: results
     };
   }

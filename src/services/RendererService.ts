@@ -1,6 +1,7 @@
 import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';
 import { 
+  KPI_LABELS,
   KPIKey, 
   KPI_THRESHOLDS, 
   RENDERER_CONFIG, 
@@ -53,11 +54,55 @@ export default class RendererService {
   }
   
   /**
-   * Creates a class break renderer for a specific KPI and year
-   * Now checks cache first before creating new renderer
+   * Creates a class break renderer for a specific KPI and year.
+   * This is the main factory method. It can create renderers based on:
+   * 1. Pre-calculated class fields (e.g., `IRI_Class_2025`) for performance.
+   * 2. Raw KPI values (e.g., `AIRI_2025`) as a fallback.
+   * 
+   * The method is designed to replace the older `createKPIRenderer`.
    * @param kpi - The KPI type (iri, rut, psci, etc.)
    * @param year - The survey year (2011, 2018, 2025)
-   * @returns ClassBreaksRenderer configured for the KPI
+   * @param themeMode - Current theme ('light' or 'dark')
+   * @param useClassField - Whether to use pre-calculated class fields (default: true)
+   * @returns A configured ClassBreaksRenderer or UniqueValueRenderer
+   */
+  static createRenderer(
+    kpi: KPIKey, 
+    year: number, 
+    themeMode: 'light' | 'dark',
+    useClassField: boolean = true
+  ): ClassBreaksRenderer { // Note: Returns ClassBreaksRenderer for type consistency, even if underlying is UniqueValue
+    // Check cache first
+    const cached = this.getCachedRenderer(kpi, year, themeMode);
+    if (cached) {
+      return cached;
+    }
+
+    console.log(`Creating renderer for ${kpi}/${year}, useClassField: ${useClassField}`);
+
+    // Use class field by default for performance
+    const fieldName = getKPIFieldName(kpi, year, useClassField);
+    const use5Classes = RENDERER_CONFIG.use5ClassRenderers;
+    
+    let renderer: ClassBreaksRenderer;
+
+    if (useClassField) {
+      // NEW: Use pre-calculated class fields (1-5 integer values)
+      renderer = this.createClassFieldRenderer(kpi, fieldName, themeMode);
+    } else {
+      // FALLBACK: Use raw values with threshold calculations
+      renderer = this.createRawValueRenderer(kpi, fieldName, themeMode, use5Classes);
+    }
+
+    // Cache the renderer
+    const cacheKey = this.getCacheKey(kpi, year, themeMode);
+    this.rendererCache.set(cacheKey, renderer);
+    
+    return renderer;
+  }
+
+  /**
+   * @deprecated Use createRenderer instead.
    */
   static createKPIRenderer(kpi: KPIKey, year: number, themeMode: 'light' | 'dark'): ClassBreaksRenderer {
     const colors = RENDERER_CONFIG.getThemeAwareColors();
@@ -70,7 +115,7 @@ export default class RendererService {
     
     console.log(`Creating new renderer for ${kpi}/${year}`);
     
-    // Construct the field name based on KPI and year using helper function
+    // DEPRECATED: This path uses raw values. New path uses createRenderer.
     const fieldName = getKPIFieldName(kpi, year);
     
     // Get thresholds for this KPI from centralized config
@@ -109,6 +154,101 @@ export default class RendererService {
   }
   
   /**
+   * Creates a renderer from a pre-calculated class field (e.g., `IRI_Class_2025`).
+   * This is more performant as the classification is done on the server.
+   * The field is expected to contain integer values (1-5) representing condition classes.
+   * 1=Very Good, 2=Good, 3=Fair, 4=Poor, 5=Very Poor
+   * @param kpi - The KPI for which to create the renderer.
+   * @param fieldName - The name of the pre-calculated class field.
+   * @param themeMode - The current UI theme.
+   * @returns A configured ClassBreaksRenderer.
+   */
+  private static createClassFieldRenderer(
+    kpi: KPIKey,
+    fieldName: string,
+    themeMode: 'light' | 'dark'
+  ): ClassBreaksRenderer {
+    const colors = RENDERER_CONFIG.getThemeAwareColors();
+    const lineWidth = RENDERER_CONFIG.lineWidth;
+
+    const renderer = new ClassBreaksRenderer({
+      field: fieldName,
+      defaultSymbol: new SimpleLineSymbol({
+        color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5),
+        width: lineWidth
+      }),
+      defaultLabel: 'No Data'
+    });
+
+    // Define class breaks for integer values 1 through 5
+    const classInfos = [
+      { value: 1, label: 'Very Good', color: colors.veryGood },
+      { value: 2, label: 'Good', color: colors.good },
+      { value: 3, label: 'Fair', color: colors.fair },
+      { value: 4, label: 'Poor', color: colors.poor },
+      { value: 5, label: 'Very Poor', color: colors.veryPoor }
+    ];
+
+    // MPD only has 3 classes (Good, Fair, Poor), which we map to 2, 3, 4
+    if (kpi === 'mpd') {
+      renderer.addClassBreakInfo({
+        minValue: 2, maxValue: 2, label: 'Good',
+        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth })
+      });
+      renderer.addClassBreakInfo({
+        minValue: 3, maxValue: 3, label: 'Fair',
+        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth })
+      });
+      renderer.addClassBreakInfo({
+        minValue: 4, maxValue: 4, label: 'Poor',
+        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth })
+      });
+    } else {
+      classInfos.forEach(info => {
+        renderer.addClassBreakInfo({
+          minValue: info.value,
+          maxValue: info.value,
+          label: info.label,
+          symbol: new SimpleLineSymbol({ color: info.color, width: lineWidth })
+        });
+      });
+    }
+
+    return renderer;
+  }
+
+  /**
+   * Creates a renderer by applying class breaks to raw KPI values.
+   * This is the fallback method if pre-calculated fields are not used.
+   * @param kpi - The KPI for which to create the renderer.
+   * @param fieldName - The name of the raw value field.
+   * @param themeMode - The current UI theme.
+   * @param use5Classes - Whether to use a 5-class or 3-class system.
+   * @returns A configured ClassBreaksRenderer.
+   */
+  private static createRawValueRenderer(
+    kpi: KPIKey,
+    fieldName: string,
+    themeMode: 'light' | 'dark',
+    use5Classes: boolean
+  ): ClassBreaksRenderer {
+    const colors = RENDERER_CONFIG.getThemeAwareColors();
+    const thresholds = KPI_THRESHOLDS[kpi];
+    const renderer = new ClassBreaksRenderer({
+      field: fieldName,
+      defaultSymbol: new SimpleLineSymbol({ color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5), width: RENDERER_CONFIG.lineWidth }),
+      defaultLabel: 'No Data'
+    });
+
+    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') this.addStandardBreaks(renderer, kpi, thresholds, use5Classes, colors);
+    else if (kpi === 'csc') this.addInvertedBreaks(renderer, kpi, thresholds, use5Classes, colors);
+    else if (kpi === 'psci') this.addPSCIBreaks(renderer, use5Classes, colors);
+    else if (kpi === 'mpd') this.addMPDBreaks(renderer, colors);
+
+    return renderer;
+  }
+
+  /**
    * Preload all possible renderer combinations at startup
    * This creates all 18 renderers (6 KPIs × 3 years) in advance
    * @returns Promise that resolves when all renderers are loaded
@@ -133,7 +273,7 @@ export default class RendererService {
     for (const kpi of kpis) {
       for (const year of years) {
         // This will create and cache each renderer
-        this.createKPIRenderer(kpi, year, themeMode);
+        this.createRenderer(kpi, year, themeMode);
         count++;
         
         // Yield to browser to prevent blocking

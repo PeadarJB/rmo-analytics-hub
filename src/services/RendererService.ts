@@ -15,13 +15,15 @@ import { getCSSCustomProperty, hexToRgb } from '@/utils/themeHelpers';
  * Service for creating ArcGIS renderers for pavement condition KPIs.
  * Uses centralized thresholds and configuration from appConfig.ts
  * Implements caching for performance optimization.
+ * 
+ * PHASE 3: Updated to use pre-calculated class fields for better performance
  */
 export default class RendererService {
   /**
    * Private cache for storing pre-computed renderers
-   * Key format: "kpi_year" (e.g., "iri_2025")
+   * Key format: "kpi_year_themeMode" (e.g., "iri_2025_light")
    */
-  private static rendererCache: Map<string, ClassBreaksRenderer> = new Map(); // Key: "kpi_year_themeMode"
+  private static rendererCache: Map<string, ClassBreaksRenderer> = new Map();
   
   /**
    * Track whether renderers have been preloaded
@@ -39,6 +41,7 @@ export default class RendererService {
    * Get a cached renderer if it exists
    * @param kpi - The KPI type
    * @param year - The survey year
+   * @param themeMode - Current theme mode
    * @returns Cached renderer or null if not found
    */
   static getCachedRenderer(kpi: KPIKey, year: number, themeMode: 'light' | 'dark'): ClassBreaksRenderer | null {
@@ -54,24 +57,20 @@ export default class RendererService {
   }
   
   /**
-   * Creates a class break renderer for a specific KPI and year.
-   * This is the main factory method. It can create renderers based on:
-   * 1. Pre-calculated class fields (e.g., `IRI_Class_2025`) for performance.
-   * 2. Raw KPI values (e.g., `AIRI_2025`) as a fallback.
-   * 
-   * The method is designed to replace the older `createKPIRenderer`.
+   * Creates a class break renderer for a specific KPI and year
+   * Now uses pre-calculated class fields for better performance
    * @param kpi - The KPI type (iri, rut, psci, etc.)
    * @param year - The survey year (2011, 2018, 2025)
    * @param themeMode - Current theme ('light' or 'dark')
    * @param useClassField - Whether to use pre-calculated class fields (default: true)
-   * @returns A configured ClassBreaksRenderer or UniqueValueRenderer
+   * @returns A configured ClassBreaksRenderer
    */
   static createRenderer(
     kpi: KPIKey, 
     year: number, 
     themeMode: 'light' | 'dark',
     useClassField: boolean = true
-  ): ClassBreaksRenderer { // Note: Returns ClassBreaksRenderer for type consistency, even if underlying is UniqueValue
+  ): ClassBreaksRenderer {
     // Check cache first
     const cached = this.getCachedRenderer(kpi, year, themeMode);
     if (cached) {
@@ -102,73 +101,93 @@ export default class RendererService {
   }
 
   /**
-   * @deprecated Use createRenderer instead.
-   */
-  static createKPIRenderer(kpi: KPIKey, year: number, themeMode: 'light' | 'dark'): ClassBreaksRenderer {
-    const colors = RENDERER_CONFIG.getThemeAwareColors();
-
-    // Check cache first
-    const cached = this.getCachedRenderer(kpi, year, themeMode);
-    if (cached) {
-      return cached;
-    }
-    
-    console.log(`Creating new renderer for ${kpi}/${year}`);
-    
-    // DEPRECATED: This path uses raw values. New path uses createRenderer.
-    const fieldName = getKPIFieldName(kpi, year);
-    
-    // Get thresholds for this KPI from centralized config
-    const thresholds = KPI_THRESHOLDS[kpi];
-    
-    // Create the renderer
-    const renderer = new ClassBreaksRenderer({
-      field: fieldName,
-      defaultSymbol: new SimpleLineSymbol({
-        color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5), // Gray for null/undefined values
-        width: RENDERER_CONFIG.lineWidth || 4
-      }),
-      defaultLabel: 'No Data'
-    });
-    
-    // Add class breaks based on KPI type
-    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
-      // Lower values are better
-      this.addStandardBreaks(renderer, kpi, thresholds, RENDERER_CONFIG.use5ClassRenderers, colors);
-    } else if (kpi === 'csc') {
-      // Higher values are better (inverted)
-      this.addInvertedBreaks(renderer, kpi, thresholds, RENDERER_CONFIG.use5ClassRenderers, colors);
-    } else if (kpi === 'psci') {
-      // PSCI uses 1-10 scale, higher is better
-      this.addPSCIBreaks(renderer, RENDERER_CONFIG.use5ClassRenderers, colors);
-    } else if (kpi === 'mpd') {
-      // MPD has simple poor/fair/good threshold
-      this.addMPDBreaks(renderer, colors);
-    }
-    
-    // Cache the renderer before returning
-    const key = this.getCacheKey(kpi, year, themeMode);
-    this.rendererCache.set(key, renderer);
-    
-    return renderer;
-  }
-  
-  /**
-   * Creates a renderer from a pre-calculated class field (e.g., `IRI_Class_2025`).
-   * This is more performant as the classification is done on the server.
-   * The field is expected to contain integer values (1-5) representing condition classes.
-   * 1=Very Good, 2=Good, 3=Fair, 4=Poor, 5=Very Poor
-   * @param kpi - The KPI for which to create the renderer.
-   * @param fieldName - The name of the pre-calculated class field.
-   * @param themeMode - The current UI theme.
-   * @returns A configured ClassBreaksRenderer.
+   * NEW: Creates renderer using pre-calculated class fields
+   * Class field values: 1=Very Good, 2=Good, 3=Fair, 4=Poor, 5=Very Poor
+   * @param kpi - The KPI type
+   * @param classFieldName - The class field name (e.g., "IRI_Class_2025")
+   * @param themeMode - Current theme mode
+   * @returns ClassBreaksRenderer using class field values
    */
   private static createClassFieldRenderer(
     kpi: KPIKey,
-    fieldName: string,
+    classFieldName: string,
     themeMode: 'light' | 'dark'
   ): ClassBreaksRenderer {
     const colors = RENDERER_CONFIG.getThemeAwareColors();
+    const lineWidth = RENDERER_CONFIG.lineWidth;
+
+    const renderer = new ClassBreaksRenderer({
+      field: classFieldName,
+      defaultSymbol: new SimpleLineSymbol({
+        color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5),
+        width: lineWidth
+      }),
+      defaultLabel: 'No Data'
+    });
+
+    // Handle KPI-specific class counts
+    if (kpi === 'psci') {
+      // PSCI: 4 classes (1-4, no class 5)
+      this.addClassBreak(renderer, 1, 1, colors.veryGood as [number, number, number, number], lineWidth, 'Very Good (9-10)');
+      this.addClassBreak(renderer, 2, 2, colors.good as [number, number, number, number], lineWidth, 'Good (7-8)');
+      this.addClassBreak(renderer, 3, 3, colors.fair as [number, number, number, number], lineWidth, 'Fair (5-6)');
+      this.addClassBreak(renderer, 4, 4, colors.poor as [number, number, number, number], lineWidth, 'Poor (1-4)');
+    } else if (kpi === 'mpd') {
+      // MPD: 3 classes (1=Good, 2=Fair, 3=Poor)
+      this.addClassBreak(renderer, 1, 1, colors.veryGood as [number, number, number, number], lineWidth, 'Good (≥0.7)');
+      this.addClassBreak(renderer, 2, 2, colors.fair as [number, number, number, number], lineWidth, 'Fair (0.6-0.7)');
+      this.addClassBreak(renderer, 3, 3, colors.poor as [number, number, number, number], lineWidth, 'Poor (<0.6)');
+    } else {
+      // Standard 5 classes for IRI, Rut, CSC, LPV
+      this.addClassBreak(renderer, 1, 1, colors.veryGood as [number, number, number, number], lineWidth, 'Very Good');
+      this.addClassBreak(renderer, 2, 2, colors.good as [number, number, number, number], lineWidth, 'Good');
+      this.addClassBreak(renderer, 3, 3, colors.fair as [number, number, number, number], lineWidth, 'Fair');
+      this.addClassBreak(renderer, 4, 4, colors.poor as [number, number, number, number], lineWidth, 'Poor');
+      this.addClassBreak(renderer, 5, 5, colors.veryPoor as [number, number, number, number], lineWidth, 'Very Poor');
+    }
+
+    return renderer;
+  }
+
+  /**
+   * Helper: Add a class break to renderer
+   */
+  private static addClassBreak(
+    renderer: ClassBreaksRenderer,
+    minValue: number,
+    maxValue: number,
+    color: [number, number, number, number],
+    width: number,
+    label: string
+  ): void {
+    renderer.addClassBreakInfo({
+      minValue,
+      maxValue,
+      symbol: new SimpleLineSymbol({
+        color,
+        width
+      }),
+      label
+    });
+  }
+
+  /**
+   * FALLBACK: Creates renderer using raw KPI values with threshold calculations
+   * Used when class fields are not available
+   * @param kpi - The KPI type
+   * @param fieldName - The raw value field name
+   * @param themeMode - Current theme mode
+   * @param use5Classes - Whether to use 5-class system
+   * @returns ClassBreaksRenderer using raw value thresholds
+   */
+  private static createRawValueRenderer(
+    kpi: KPIKey,
+    fieldName: string,
+    themeMode: 'light' | 'dark',
+    use5Classes: boolean
+  ): ClassBreaksRenderer {
+    const colors = RENDERER_CONFIG.getThemeAwareColors();
+    const thresholds = KPI_THRESHOLDS[kpi];
     const lineWidth = RENDERER_CONFIG.lineWidth;
 
     const renderer = new ClassBreaksRenderer({
@@ -180,72 +199,89 @@ export default class RendererService {
       defaultLabel: 'No Data'
     });
 
-    // Define class breaks for integer values 1 through 5
-    const classInfos = [
-      { value: 1, label: 'Very Good', color: colors.veryGood },
-      { value: 2, label: 'Good', color: colors.good },
-      { value: 3, label: 'Fair', color: colors.fair },
-      { value: 4, label: 'Poor', color: colors.poor },
-      { value: 5, label: 'Very Poor', color: colors.veryPoor }
-    ];
-
-    // MPD only has 3 classes (Good, Fair, Poor), which we map to 2, 3, 4
-    if (kpi === 'mpd') {
-      renderer.addClassBreakInfo({
-        minValue: 2, maxValue: 2, label: 'Good',
-        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth })
-      });
-      renderer.addClassBreakInfo({
-        minValue: 3, maxValue: 3, label: 'Fair',
-        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth })
-      });
-      renderer.addClassBreakInfo({
-        minValue: 4, maxValue: 4, label: 'Poor',
-        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth })
-      });
-    } else {
-      classInfos.forEach(info => {
-        renderer.addClassBreakInfo({
-          minValue: info.value,
-          maxValue: info.value,
-          label: info.label,
-          symbol: new SimpleLineSymbol({ color: info.color, width: lineWidth })
-        });
-      });
+    // Apply threshold-based breaks (existing logic)
+    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
+      // Lower is better
+      if (use5Classes && thresholds.veryGood !== undefined) {
+        this.addClassBreak(renderer, 0, thresholds.veryGood, colors.veryGood as [number, number, number, number], lineWidth, 'Very Good');
+      }
+      this.addClassBreak(renderer, thresholds.veryGood || 0, thresholds.good, colors.good as [number, number, number, number], lineWidth, 'Good');
+      this.addClassBreak(renderer, thresholds.good, thresholds.fair, colors.fair as [number, number, number, number], lineWidth, 'Fair');
+      
+      if (use5Classes && thresholds.poor !== undefined) {
+        this.addClassBreak(renderer, thresholds.fair, thresholds.poor, colors.poor as [number, number, number, number], lineWidth, 'Poor');
+        this.addClassBreak(renderer, thresholds.poor, 9999, colors.veryPoor as [number, number, number, number], lineWidth, 'Very Poor');
+      } else {
+        this.addClassBreak(renderer, thresholds.fair, 9999, colors.poor as [number, number, number, number], lineWidth, 'Poor');
+      }
+    } else if (kpi === 'csc') {
+      // Higher is better (inverted)
+      if (use5Classes && thresholds.good !== undefined) {
+        this.addClassBreak(renderer, thresholds.good, 999, colors.veryGood as [number, number, number, number], lineWidth, 'Very Good');
+      }
+      this.addClassBreak(renderer, thresholds.fair, thresholds.good, colors.good as [number, number, number, number], lineWidth, 'Good');
+      this.addClassBreak(renderer, thresholds.poor!, thresholds.fair, colors.fair as [number, number, number, number], lineWidth, 'Fair');
+      
+      if (use5Classes && thresholds.veryPoor !== undefined) {
+        this.addClassBreak(renderer, thresholds.veryPoor, thresholds.poor!, colors.poor as [number, number, number, number], lineWidth, 'Poor');
+        this.addClassBreak(renderer, 0, thresholds.veryPoor, colors.veryPoor as [number, number, number, number], lineWidth, 'Very Poor');
+      } else {
+        this.addClassBreak(renderer, 0, thresholds.poor!, colors.poor as [number, number, number, number], lineWidth, 'Poor');
+      }
+    } else if (kpi === 'psci') {
+      // PSCI: 4 classes when using raw values
+      if (use5Classes) {
+        this.addClassBreak(renderer, 9, 10, colors.veryGood as [number, number, number, number], lineWidth, 'Very Good (9-10)');
+        this.addClassBreak(renderer, 7, 9, colors.good as [number, number, number, number], lineWidth, 'Good (7-8)');
+        this.addClassBreak(renderer, 5, 7, colors.fair as [number, number, number, number], lineWidth, 'Fair (5-6)');
+        this.addClassBreak(renderer, 1, 5, colors.poor as [number, number, number, number], lineWidth, 'Poor (1-4)');
+      } else {
+        this.addClassBreak(renderer, thresholds.fair, 10, colors.good as [number, number, number, number], lineWidth, 'Good');
+        this.addClassBreak(renderer, thresholds.poor!, thresholds.fair, colors.fair as [number, number, number, number], lineWidth, 'Fair');
+        this.addClassBreak(renderer, 1, thresholds.poor!, colors.poor as [number, number, number, number], lineWidth, 'Poor');
+      }
+    } else if (kpi === 'mpd') {
+      // MPD: 3 classes only
+      this.addClassBreak(renderer, thresholds.good, 999, colors.veryGood as [number, number, number, number], lineWidth, 'Good');
+      this.addClassBreak(renderer, thresholds.poor!, thresholds.good, colors.fair as [number, number, number, number], lineWidth, 'Fair');
+      this.addClassBreak(renderer, 0, thresholds.poor!, colors.poor as [number, number, number, number], lineWidth, 'Poor');
     }
 
     return renderer;
   }
 
   /**
-   * Creates a renderer by applying class breaks to raw KPI values.
-   * This is the fallback method if pre-calculated fields are not used.
-   * @param kpi - The KPI for which to create the renderer.
-   * @param fieldName - The name of the raw value field.
-   * @param themeMode - The current UI theme.
-   * @param use5Classes - Whether to use a 5-class or 3-class system.
-   * @returns A configured ClassBreaksRenderer.
+   * @deprecated Use createRenderer instead.
+   * Legacy method maintained for backward compatibility
    */
-  private static createRawValueRenderer(
-    kpi: KPIKey,
-    fieldName: string,
-    themeMode: 'light' | 'dark',
-    use5Classes: boolean
-  ): ClassBreaksRenderer {
-    const colors = RENDERER_CONFIG.getThemeAwareColors();
-    const thresholds = KPI_THRESHOLDS[kpi];
-    const renderer = new ClassBreaksRenderer({
-      field: fieldName,
-      defaultSymbol: new SimpleLineSymbol({ color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5), width: RENDERER_CONFIG.lineWidth }),
-      defaultLabel: 'No Data'
+  static createKPIRenderer(kpi: KPIKey, year: number, themeMode: 'light' | 'dark'): ClassBreaksRenderer {
+    console.warn('createKPIRenderer is deprecated. Use createRenderer instead.');
+    return this.createRenderer(kpi, year, themeMode, false); // Use raw values for legacy calls
+  }
+
+  /**
+   * Preload renderers for common KPI/year combinations
+   * This improves initial load performance by caching renderers upfront
+   */
+  static preloadRenderers(themeMode: 'light' | 'dark'): void {
+    if (this.isPreloaded) {
+      console.log('Renderers already preloaded');
+      return;
+    }
+
+    console.log('Preloading renderers with class fields...');
+    const kpis: KPIKey[] = ['iri', 'rut', 'psci', 'csc', 'mpd', 'lpv3'];
+    const years = [2011, 2018, 2025];
+
+    kpis.forEach(kpi => {
+      years.forEach(year => {
+        // Preload with class fields (default behavior)
+        this.createRenderer(kpi, year, themeMode, true);
+      });
     });
 
-    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') this.addStandardBreaks(renderer, kpi, thresholds, use5Classes, colors);
-    else if (kpi === 'csc') this.addInvertedBreaks(renderer, kpi, thresholds, use5Classes, colors);
-    else if (kpi === 'psci') this.addPSCIBreaks(renderer, use5Classes, colors);
-    else if (kpi === 'mpd') this.addMPDBreaks(renderer, colors);
-
-    return renderer;
+    this.isPreloaded = true;
+    console.log(`✓ Preloaded ${this.rendererCache.size} renderers`);
   }
 
   /**
@@ -273,7 +309,7 @@ export default class RendererService {
     for (const kpi of kpis) {
       for (const year of years) {
         // This will create and cache each renderer
-        this.createRenderer(kpi, year, themeMode);
+        this.createRenderer(kpi, year, themeMode, true); // Use class fields
         count++;
         
         // Yield to browser to prevent blocking
@@ -291,7 +327,7 @@ export default class RendererService {
     
     this.isPreloaded = true;
   }
-  
+
   /**
    * Clear the renderer cache (useful for testing or memory management)
    */
@@ -300,21 +336,35 @@ export default class RendererService {
     this.rendererCache.clear();
     this.isPreloaded = false;
   }
-  
+
   /**
-   * Get cache statistics (for debugging/monitoring)
+   * Get detailed cache statistics
    */
-  static getCacheStats(): { size: number; keys: string[]; isPreloaded: boolean } {
+  static getCacheStats(): { 
+    size: number; 
+    keys: string[];
+    breakdown: { classField: number; rawValue: number };
+  } {
+    const keys = Array.from(this.rendererCache.keys());
+    // Note: If we implement different cache keys for class vs raw, update this logic
+    // For now, all cached renderers use class fields by default
+    const classFieldCount = keys.length; // All use class fields
+    const rawValueCount = 0; // None use raw values (unless explicitly called with useClassField=false)
+
     return {
       size: this.rendererCache.size,
-      keys: Array.from(this.rendererCache.keys()),
-      isPreloaded: this.isPreloaded
+      keys,
+      breakdown: {
+        classField: classFieldCount,
+        rawValue: rawValueCount
+      }
     };
   }
-  
+
   /**
    * Add standard class breaks (lower values = better condition)
    * Used for IRI, RUT, and LPV3
+   * @deprecated - Used only in legacy createKPIRenderer
    */
   private static addStandardBreaks(
     renderer: ClassBreaksRenderer, 
@@ -327,71 +377,37 @@ export default class RendererService {
     
     if (use5Classes && thresholds.veryGood !== undefined && thresholds.poor !== undefined) {
       // 5-class system with Very Good through Very Poor
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: thresholds.veryGood,
-        symbol: new SimpleLineSymbol({ color: colors.veryGood, width: lineWidth }),
-        label: `Very Good (< ${thresholds.veryGood})`
-      });
+      this.addClassBreak(renderer, 0, thresholds.veryGood, colors.veryGood, lineWidth, 
+        `Very Good (< ${thresholds.veryGood})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.veryGood,
-        maxValue: thresholds.good,
-        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
-        label: `Good (${thresholds.veryGood}-${thresholds.good})`
-      });
+      this.addClassBreak(renderer, thresholds.veryGood, thresholds.good, colors.good, lineWidth,
+        `Good (${thresholds.veryGood}-${thresholds.good})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.good,
-        maxValue: thresholds.fair,
-        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
-        label: `Fair (${thresholds.good}-${thresholds.fair})`
-      });
+      this.addClassBreak(renderer, thresholds.good, thresholds.fair, colors.fair, lineWidth,
+        `Fair (${thresholds.good}-${thresholds.fair})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.fair,
-        maxValue: thresholds.poor,
-        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
-        label: `Poor (${thresholds.fair}-${thresholds.poor})`
-      });
+      this.addClassBreak(renderer, thresholds.fair, thresholds.poor, colors.poor, lineWidth,
+        `Poor (${thresholds.fair}-${thresholds.poor})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.poor,
-        maxValue: 9999999,
-        symbol: new SimpleLineSymbol({ color: colors.veryPoor, width: lineWidth }),
-        label: `Very Poor (> ${thresholds.poor})`
-      });
+      this.addClassBreak(renderer, thresholds.poor, 9999, colors.veryPoor, lineWidth,
+        `Very Poor (> ${thresholds.poor})`);
     } else {
-      // Simplified 3-class system
-      const goodMax = thresholds.good;
-      const fairMax = thresholds.fair;
+      // 3-class system: Good, Fair, Poor
+      this.addClassBreak(renderer, 0, thresholds.good, colors.good, lineWidth,
+        `Good (< ${thresholds.good})`);
       
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: goodMax,
-        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
-        label: `Good (< ${goodMax})`
-      });
+      this.addClassBreak(renderer, thresholds.good, thresholds.fair, colors.fair, lineWidth,
+        `Fair (${thresholds.good}-${thresholds.fair})`);
       
-      renderer.addClassBreakInfo({
-        minValue: goodMax,
-        maxValue: fairMax,
-        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
-        label: `Fair (${goodMax}-${fairMax})`
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: fairMax,
-        maxValue: 9999999,
-        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
-        label: `Poor (> ${fairMax})`
-      });
+      this.addClassBreak(renderer, thresholds.fair, 9999, colors.poor, lineWidth,
+        `Poor (> ${thresholds.fair})`);
     }
   }
-  
+
   /**
-   * Add inverted class breaks for CSC (higher values = better condition)
-   * CSC: ≤0.35 = Very Poor, 0.35-0.40 = Poor, 0.40-0.45 = Fair, 0.45-0.50 = Good, >0.50 = Very Good
+   * Add inverted class breaks (higher values = better condition)
+   * Used for CSC
+   * @deprecated - Used only in legacy createKPIRenderer
    */
   private static addInvertedBreaks(
     renderer: ClassBreaksRenderer,
@@ -402,262 +418,78 @@ export default class RendererService {
   ): void {
     const lineWidth = RENDERER_CONFIG.lineWidth;
     
-    if (use5Classes && thresholds.veryPoor !== undefined && thresholds.poor !== undefined && thresholds.good !== undefined) {
-      // 5-class system for CSC
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: thresholds.veryPoor,
-        symbol: new SimpleLineSymbol({ color: colors.veryPoor, width: lineWidth }),
-        label: `Very Poor (≤ ${thresholds.veryPoor})`
-      });
+    if (use5Classes && thresholds.veryPoor !== undefined && thresholds.good !== undefined) {
+      // 5-class system (inverted)
+      this.addClassBreak(renderer, thresholds.good, 999, colors.veryGood, lineWidth,
+        `Very Good (> ${thresholds.good})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.veryPoor,
-        maxValue: thresholds.poor,
-        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
-        label: `Poor (${thresholds.veryPoor}-${thresholds.poor})`
-      });
+      this.addClassBreak(renderer, thresholds.fair, thresholds.good, colors.good, lineWidth,
+        `Good (${thresholds.fair}-${thresholds.good})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.poor,
-        maxValue: thresholds.fair,
-        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
-        label: `Fair (${thresholds.poor}-${thresholds.fair})`
-      });
+      this.addClassBreak(renderer, thresholds.poor!, thresholds.fair, colors.fair, lineWidth,
+        `Fair (${thresholds.poor}-${thresholds.fair})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.fair,
-        maxValue: thresholds.good,
-        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
-        label: `Good (${thresholds.fair}-${thresholds.good})`
-      });
+      this.addClassBreak(renderer, thresholds.veryPoor, thresholds.poor!, colors.poor, lineWidth,
+        `Poor (${thresholds.veryPoor}-${thresholds.poor})`);
       
-      renderer.addClassBreakInfo({
-        minValue: thresholds.good,
-        maxValue: 1,
-        symbol: new SimpleLineSymbol({ color: colors.veryGood, width: lineWidth }),
-        label: `Very Good (> ${thresholds.good})`
-      });
+      this.addClassBreak(renderer, 0, thresholds.veryPoor, colors.veryPoor, lineWidth,
+        `Very Poor (< ${thresholds.veryPoor})`);
     } else {
-      // 3-class system for CSC
-      const poorMax = thresholds.veryPoor || thresholds.poor!;
+      // 3-class system (inverted)
+      this.addClassBreak(renderer, thresholds.fair, 999, colors.good, lineWidth,
+        `Good (> ${thresholds.fair})`);
       
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: poorMax,
-        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
-        label: `Poor (< ${poorMax})`
-      });
+      this.addClassBreak(renderer, thresholds.poor!, thresholds.fair, colors.fair, lineWidth,
+        `Fair (${thresholds.poor}-${thresholds.fair})`);
       
-      renderer.addClassBreakInfo({
-        minValue: poorMax,
-        maxValue: thresholds.fair,
-        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
-        label: `Fair (${poorMax}-${thresholds.fair})`
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: thresholds.fair,
-        maxValue: 1,
-        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
-        label: `Good (> ${thresholds.fair})`
-      });
+      this.addClassBreak(renderer, 0, thresholds.poor!, colors.poor, lineWidth,
+        `Poor (< ${thresholds.poor})`);
     }
   }
-  
+
   /**
-   * Add PSCI-specific breaks (1-10 scale)
-   * PSCI remedial categories from 2018 report:
-   * - 1-2: Road Reconstruction
-   * - 3-4: Structural Rehabilitation  
-   * - 5-6: Surface Restoration
-   * - 7-8: Restoration of Skid Resistance
-   * - 9-10: Routine Maintenance
-   * * Note: ClassBreaksRenderer treats maxValue as inclusive.
-   * To avoid overlap, we use values like 2.999, 4.999, etc.
+   * Add PSCI-specific breaks (4 classes)
+   * @deprecated - Used only in legacy createKPIRenderer
    */
-  private static addPSCIBreaks(renderer: ClassBreaksRenderer, use5Classes: boolean = false, colors: any): void {
+  private static addPSCIBreaks(
+    renderer: ClassBreaksRenderer,
+    use5Classes: boolean = false,
+    colors: any
+  ): void {
     const lineWidth = RENDERER_CONFIG.lineWidth;
-    const thresholds = KPI_THRESHOLDS.psci;
     
     if (use5Classes) {
-      // 5-class system matching remedial categories
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: thresholds.veryPoor!, // Using value from appConfig
-        symbol: new SimpleLineSymbol({ color: colors.veryPoor, width: lineWidth }),
-        label: 'Very Poor (1-2): Reconstruction'
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: thresholds.veryPoor!,
-        maxValue: thresholds.poor!,
-        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
-        label: 'Poor (3-4): Structural Rehab'
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: thresholds.poor!,
-        maxValue: thresholds.fair!,
-        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
-        label: 'Fair (5-6): Surface Restoration'
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: thresholds.fair!,
-        maxValue: thresholds.good!,
-        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
-        label: 'Good (7-8): Skid Resistance'
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: thresholds.good!,
-        maxValue: 10,
-        symbol: new SimpleLineSymbol({ color: colors.veryGood, width: lineWidth }),
-        label: 'Very Good (9-10): Routine Maint.'
-      });
+      // 4-class system for PSCI
+      this.addClassBreak(renderer, 9, 10, colors.veryGood, lineWidth, 'Very Good (9-10)');
+      this.addClassBreak(renderer, 7, 9, colors.good, lineWidth, 'Good (7-8)');
+      this.addClassBreak(renderer, 5, 7, colors.fair, lineWidth, 'Fair (5-6)');
+      this.addClassBreak(renderer, 1, 5, colors.poor, lineWidth, 'Poor (1-4)');
     } else {
-      // Simplified 3-class system
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: thresholds.poor!,
-        symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
-        label: 'Poor (1-4): Reconstruction/Structural'
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: thresholds.poor!,
-        maxValue: thresholds.fair!,
-        symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
-        label: 'Fair (5-6): Surface Restoration'
-      });
-      
-      renderer.addClassBreakInfo({
-        minValue: thresholds.fair!,
-        maxValue: 10,
-        symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
-        label: 'Good (7-10): Routine Maintenance'
-      });
+      // 3-class system
+      this.addClassBreak(renderer, 7, 10, colors.good, lineWidth, 'Good (7-10)');
+      this.addClassBreak(renderer, 5, 7, colors.fair, lineWidth, 'Fair (5-6)');
+      this.addClassBreak(renderer, 1, 5, colors.poor, lineWidth, 'Poor (1-4)');
     }
   }
-  
-  /**
-   * Add MPD-specific breaks
-   * MPD (Mean Profile Depth) for skid resistance:
-   * - < 0.6mm: Poor skid resistance
-   * - 0.6-0.7mm: Fair (transitional)
-   * - > 0.7mm: Good skid resistance
-   */
-  private static addMPDBreaks(renderer: ClassBreaksRenderer, colors: any): void {
-    const lineWidth = RENDERER_CONFIG.lineWidth;
-    const thresholds = KPI_THRESHOLDS.mpd;
-    
-    renderer.addClassBreakInfo({
-      minValue: 0,
-      maxValue: thresholds.poor!,
-      symbol: new SimpleLineSymbol({ color: colors.poor, width: lineWidth }),
-      label: `Poor Skid Resistance (< ${thresholds.poor}mm)`
-    });
-    
-    renderer.addClassBreakInfo({
-      minValue: thresholds.poor!,
-      maxValue: thresholds.good!,
-      symbol: new SimpleLineSymbol({ color: colors.fair, width: lineWidth }),
-      label: `Fair (${thresholds.poor}-${thresholds.good}mm)`
-    });
-    
-    renderer.addClassBreakInfo({
-      minValue: thresholds.good!,
-      maxValue: 9999999,
-      symbol: new SimpleLineSymbol({ color: colors.good, width: lineWidth }),
-      label: `Good Skid Resistance (≥ ${thresholds.good}mm)`
-    });
-  }
-  
-  /**
-   * Get the condition class for a value based on KPI type and thresholds
-   * This method is now a wrapper around the centralized function in appConfig
-   * Kept for backward compatibility
-   * * @deprecated Use getConditionClass from appConfig directly
-   */
-  static getConditionClass(kpi: KPIKey, value: number): 'good' | 'fair' | 'poor' | null {
-    const detailedClass = getConditionClass(kpi, value, false);
-    
-    if (!detailedClass) return null;
-    
-    // Map to simplified 3-class system
-    if (detailedClass === 'veryGood' || detailedClass === 'good') return 'good';
-    if (detailedClass === 'fair') return 'fair';
-    return 'poor';
-  }
-  
-  /**
-   * Creates a simple renderer with a single symbol (no classification)
-   * Useful for highlighting selected features or showing all features uniformly
-   */
-  static createSimpleRenderer(color?: number[], width?: number): any {
-    const symbolColor = color || hexToRgb(getCSSCustomProperty('--color-brand-primary'), 0.8);
-    const symbolWidth = width || RENDERER_CONFIG.lineWidth;
-
-    return {
-      type: 'simple',
-      symbol: new SimpleLineSymbol({
-        color: symbolColor,
-        width: symbolWidth
-      })
-    };
-  }
-  
-  /**
-   * Creates a unique value renderer for categorical data (e.g., subgroups)
-   * @param field - The field name to use for unique values
-   * @param valueColorMap - Map of field values to colors
-   */
-  static createUniqueValueRenderer(
-    field: string, 
-    valueColorMap: Map<string, number[]>
-  ): any {
-    const uniqueValueInfos: any[] = [];
-    const lineWidth = RENDERER_CONFIG.lineWidth;
-    
-    valueColorMap.forEach((color, value) => {
-      uniqueValueInfos.push({
-        value: value,
-        symbol: new SimpleLineSymbol({
-          color: color,
-          width: lineWidth
-        }),
-        label: value
-      });
-    });
-    
-    return {
-      type: 'unique-value',
-      field: field,
-      uniqueValueInfos: uniqueValueInfos,
-      defaultSymbol: new SimpleLineSymbol({
-        color: hexToRgb(getCSSCustomProperty('--color-fg-muted'), 0.5),
-        width: lineWidth
-      }),
-      defaultLabel: 'Other'
-    };
-  }
 
   /**
-   * Clear cached renderers for a specific theme mode
-   * Call this when theme changes to prevent stale renderers
+   * Add MPD-specific breaks (3 classes only)
+   * @deprecated - Used only in legacy createKPIRenderer
    */
-  static clearThemeCache(themeMode: 'light' | 'dark'): void {
-    const keysToDelete: string[] = [];
+  private static addMPDBreaks(
+    renderer: ClassBreaksRenderer,
+    colors: any
+  ): void {
+    const lineWidth = RENDERER_CONFIG.lineWidth;
+    const thresholds = KPI_THRESHOLDS['mpd'];
     
-    this.rendererCache.forEach((_, key) => {
-      if (key.endsWith(`_${themeMode}`)) {
-        keysToDelete.push(key);
-      }
-    });
+    this.addClassBreak(renderer, thresholds.good, 999, colors.veryGood, lineWidth,
+      `Good (≥ ${thresholds.good})`);
     
-    keysToDelete.forEach(key => this.rendererCache.delete(key));
+    this.addClassBreak(renderer, thresholds.poor!, thresholds.good, colors.fair, lineWidth,
+      `Fair (${thresholds.poor}-${thresholds.good})`);
     
-    console.log(`[Renderer Cache] Cleared ${keysToDelete.length} cached renderers for ${themeMode} theme`);
+    this.addClassBreak(renderer, 0, thresholds.poor!, colors.poor, lineWidth,
+      `Poor (< ${thresholds.poor})`);
   }
 }

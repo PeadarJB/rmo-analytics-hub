@@ -191,21 +191,25 @@ export default class StatisticsService {
     const pct = (count: number) => totalSegments > 0 ? (count / totalSegments) * 100 : 0;
 
     return {
-      kpi,
-      year,
       totalSegments,
       totalLengthKm,
-      veryGoodCount,
-      goodCount,
-      fairCount,
-      poorCount,
-      veryPoorCount,
-      veryGoodPct: pct(veryGoodCount),
-      goodPct: pct(goodCount),
-      fairPct: pct(fairCount),
-      poorPct: pct(poorCount),
-      veryPoorPct: pct(veryPoorCount),
-      fairOrBetterPct: pct(veryGoodCount + goodCount + fairCount)
+      metrics: [{
+        metric: kpi.toUpperCase(),
+        average: 0, // Not calculated in this method
+        min: 0,
+        max: 0,
+        veryGoodCount,
+        goodCount,
+        fairCount,
+        poorCount,
+        veryPoorCount,
+        veryGoodPct: pct(veryGoodCount),
+        goodPct: pct(goodCount),
+        fairPct: pct(fairCount),
+        poorPct: pct(poorCount),
+        veryPoorPct: pct(veryPoorCount),
+      }],
+      lastUpdated: new Date()
     };
   }
 
@@ -281,21 +285,25 @@ export default class StatisticsService {
     const pct = (count: number) => totalSegments > 0 ? (count / totalSegments) * 100 : 0;
 
     return {
-      kpi,
-      year,
       totalSegments,
       totalLengthKm,
-      veryGoodCount,
-      goodCount,
-      fairCount,
-      poorCount,
-      veryPoorCount,
-      veryGoodPct: pct(veryGoodCount),
-      goodPct: pct(goodCount),
-      fairPct: pct(fairCount),
-      poorPct: pct(poorCount),
-      veryPoorPct: pct(veryPoorCount),
-      fairOrBetterPct: pct(veryGoodCount + goodCount + fairCount)
+      metrics: [{
+        metric: kpi.toUpperCase(),
+        average: 0, // Not calculated in this method
+        min: 0,
+        max: 0,
+        veryGoodCount,
+        goodCount,
+        fairCount,
+        poorCount,
+        veryPoorCount,
+        veryGoodPct: pct(veryGoodCount),
+        goodPct: pct(goodCount),
+        fairPct: pct(fairCount),
+        poorPct: pct(poorCount),
+        veryPoorPct: pct(veryPoorCount),
+      }],
+      lastUpdated: new Date()
     };
   }
 
@@ -695,7 +703,26 @@ export default class StatisticsService {
     console.log('[Chart Stats] Query WHERE:', combinedWhere);
     
     // Execute the aggregated query
-    const results = await this.executeOptimizedQuery(layer, combinedWhere, kpiField, kpi);
+    const query = layer.createQuery();
+    query.where = combinedWhere;
+    query.outStatistics = [
+      { onStatisticField: kpiField, outStatisticFieldName: 'avg_value', statisticType: 'avg' },
+      { onStatisticField: kpiField, outStatisticFieldName: 'min_value', statisticType: 'min' },
+      { onStatisticField: kpiField, outStatisticFieldName: 'max_value', statisticType: 'max' },
+      { onStatisticField: kpiField, outStatisticFieldName: 'count_segments', statisticType: 'count' },
+      { onStatisticField: this.getClassificationExpressions(kpi, kpiField).veryGood, outStatisticFieldName: 'very_good_count', statisticType: 'sum' },
+      { onStatisticField: this.getClassificationExpressions(kpi, kpiField).good, outStatisticFieldName: 'good_count', statisticType: 'sum' },
+      { onStatisticField: this.getClassificationExpressions(kpi, kpiField).fair, outStatisticFieldName: 'fair_count', statisticType: 'sum' },
+      { onStatisticField: this.getClassificationExpressions(kpi, kpiField).poor, outStatisticFieldName: 'poor_count', statisticType: 'sum' },
+      { onStatisticField: this.getClassificationExpressions(kpi, kpiField).veryPoor, outStatisticFieldName: 'very_poor_count', statisticType: 'sum' }
+    ] as any;
+
+    const queryResult = await layer.queryFeatures(query);
+    const stats = queryResult.features[0]?.attributes;
+
+    const results = stats ? {
+      totalSegments: stats.count_segments, ...stats
+    } : null;
     
     return {
       kpi,

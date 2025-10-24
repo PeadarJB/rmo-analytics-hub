@@ -1,6 +1,8 @@
+import { KPIKey } from "@/config/appConfig";
+
 export interface FilterState {
   localAuthority: string[];
-  subgroup: string[];
+  subgroup: number[];
   route: string[];
   year: number[];
 }
@@ -31,6 +33,11 @@ export interface SummaryStatistics {
   totalLengthKm: number;
   metrics: KPIStats[];
   lastUpdated: Date;
+}
+
+export interface ExtendedStatistics extends SummaryStatistics {
+  kpi: KPIKey;
+  year: number;
 }
 
 export interface ConditionBreakdown {

@@ -263,12 +263,10 @@ export const SWIPE_LAYER_CONFIG: {
 
 export const CONFIG = {
   title: 'RMO Pavement Analytics',
-  webMapId: '9aff0a681f67430cad396dc9cac99e05',
-  roadNetworkLayerTitle: 'RMO NM 2025',
-  roadNetworkLayerSwipeTitle: 'RMO NM 2025',
-  
-  // NEW: LA polygon layer configuration
-  laPolygonLayerTitle: 'RMO_LA_data',
+  webMapId: '3caed4039c514e20b4e50039b92cd27b',  // ✅ UPDATED
+  roadNetworkLayerTitle: 'RoadNetwork_Temporal_2011_2025',  // ✅ UPDATED
+  roadNetworkLayerSwipeTitle: 'RoadNetwork_Temporal_2011_2025',  // ✅ UPDATED
+  laPolygonLayerTitle: 'RMO_LA_data',  // Keep for future reference
   
   fields: {
     // Raw value fields - UPDATED NAMES

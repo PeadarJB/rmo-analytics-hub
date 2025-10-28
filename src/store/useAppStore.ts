@@ -42,7 +42,6 @@ interface AppState {
   mapInitialized: boolean;
 
   // Swipe / LA polygon layers
-  laPolygonLayers: Map<string, FeatureLayer> | null;
   currentPage: 'overview' | 'condition-summary';
   leftSwipeYear: number;
   rightSwipeYear: number;
@@ -110,8 +109,6 @@ interface AppState {
   setSwipeYears: (left: number, right: number) => void;
   updateLALayerVisibility: () => void;
   setLaLayersVisibility: (visible: boolean) => void;
-
-  // NEW: LA Layer Methods
   setLALayer: (layer: __esri.FeatureLayer | null) => void;
   setLALayerVisible: (visible: boolean) => void;
   setLAMetricType: (metricType: LAMetricType) => void;
@@ -142,9 +139,7 @@ const useAppStore = create<AppState>()(
         mapInitialized: false,
         roadLayerVisible: true,
         swipePanelAutoStart: false, 
-
         // Task 13: initial state
-        laPolygonLayers: null,
         currentPage: 'overview',
         leftSwipeYear: 2018,
         rightSwipeYear: 2025,
@@ -215,43 +210,12 @@ const useAppStore = create<AppState>()(
             // Hide road layers and enable auto-start for swipe
             state.hideRoadNetworkForSwipe();
             set({ currentPage: page, swipePanelAutoStart: true, showSwipe: true });
-            // Ensure the correct LA layers become visible
-            state.updateLALayerVisibility();
+            // The single LA layer visibility is now managed by setLALayerVisible
           } else {
             // Restore road layers when leaving condition summary
             state.restoreRoadNetworkVisibility();
-            // MODIFICATION: Explicitly hide all LA polygon layers
-            state.setLaLayersVisibility(false);
+            // The single LA layer visibility is now managed by setLALayerVisible
             set({ currentPage: page, swipePanelAutoStart: false });
-          }
-        },
-        setSwipeYears: (left, right) => {
-          set({ leftSwipeYear: left, rightSwipeYear: right });
-          get().updateLALayerVisibility();
-        },
-        updateLALayerVisibility: () => {
-          const { laPolygonLayers, activeKpi, leftSwipeYear, rightSwipeYear, currentPage } = get();
-          if (!laPolygonLayers || currentPage !== 'condition-summary') return;
-        
-          // Use the LA_LAYER_CONFIG to generate the correct layer names
-          const leftLayerName = LA_LAYER_CONFIG.layerTitlePattern(activeKpi, leftSwipeYear);
-          const rightLayerName = LA_LAYER_CONFIG.layerTitlePattern(activeKpi, rightSwipeYear);
-        
-          console.log('Looking for layers:', leftLayerName, rightLayerName);
-          console.log('Available layers:', Array.from(laPolygonLayers.keys()));
-        
-          laPolygonLayers.forEach((layer, name) => {
-            layer.visible = (name === leftLayerName || name === rightLayerName);
-          });
-        },
-        // ADD THIS NEW HELPER METHOD:
-        setLaLayersVisibility: (visible) => {
-          const { laPolygonLayers } = get();
-          if (laPolygonLayers) {
-            laPolygonLayers.forEach(layer => {
-              layer.visible = visible;
-            });
-            console.log(`All LA polygon layers set to visible: ${visible}`);
           }
         },
         setRoadLayerVisibility: (visible) => {
@@ -280,7 +244,6 @@ const useAppStore = create<AppState>()(
           get().updateRenderer();
           get().calculateStatistics();
           // Optionally ensure LA layers reflect KPI change:
-          get().updateLALayerRenderer(); // NEW: Update LA layer renderer when KPI changes
           get().updateLALayerVisibility();
         },
 
@@ -525,21 +488,30 @@ const useAppStore = create<AppState>()(
               (l: any) => l.title === CONFIG.roadNetworkLayerSwipeTitle
             ) as FeatureLayer | undefined;
 
-            // Task 13: Find and store LA polygon layers
-            const laLayers = new Map<string, FeatureLayer>();
-            webmap.allLayers.forEach((layer: any) => {
-              if (layer.title && typeof layer.title === 'string') {
-                // Check if this is an Average KPI layer (e.g., "Average IRI 2018")
-                if (layer.title.startsWith('Average ')) {
-                  console.log('Found LA polygon layer:', layer.title);
-                  laLayers.set(layer.title, layer as FeatureLayer);
-                  (layer as FeatureLayer).visible = false; // Hide all initially
-                }
+            // Find single LA polygon layer
+            const laLayer = webmap.allLayers.find(
+              (l: any) => l.title === CONFIG.laPolygonLayerTitle
+            ) as FeatureLayer | undefined;
+
+            if (laLayer) {
+              console.log('✓ Found LA polygon layer:', laLayer.title);
+              await laLayer.load(); // Load to access fields
+              laLayer.visible = false; // Hidden by default
+              
+              // Set opacity and z-order
+              laLayer.opacity = 0.7;
+              
+              // Move LA layer below road network
+              if (road) {
+                const roadIndex = webmap.layers.indexOf(road as any);
+                webmap.reorder(laLayer, roadIndex);
               }
-            });
-            
-            console.log(`Found ${laLayers.size} LA polygon layers`);
-            set({ laPolygonLayers: laLayers });
+              
+              // Store in state
+              get().setLALayer(laLayer);
+            } else {
+              console.warn('⚠ LA polygon layer not found:', CONFIG.laPolygonLayerTitle);
+            }
             
             if (!road) {
               message.warning('Road network layer not found. Check layer title in config.');
@@ -560,9 +532,6 @@ const useAppStore = create<AppState>()(
             if (road) {
               get().updateRenderer();
             }
-
-            // Ensure LA layers visibility aligns with current state (likely all hidden initially)
-            get().updateLALayerVisibility();
 
             if (state.mapView) {
               state.mapView.destroy();
@@ -899,7 +868,7 @@ const useAppStore = create<AppState>()(
               console.log('[Chart Selection] Replaced with:', selection);
             }
           }
-          
+
           // ADD: Auto-calculate chart statistics after selection change
           setTimeout(() => {
             state.calculateChartFilteredStatistics();
@@ -949,6 +918,18 @@ const useAppStore = create<AppState>()(
           updateLALayerRenderer();
         },
 
+        setSwipeYears: (left, right) => {
+          set({ leftSwipeYear: left, rightSwipeYear: right });
+          // The single LA layer visibility is now managed by setLALayerVisible
+          // and its renderer updated by updateLALayerRenderer
+          get().updateLALayerRenderer();
+        },
+
+        // This method is no longer needed as we only have one LA layer whose visibility
+        // is directly controlled by `laLayerVisible` state and `setLALayerVisible` action.
+        updateLALayerVisibility: () => { /* No-op */ },
+        setLaLayersVisibility: (visible) => { /* No-op */ },
+
         /**
          * Update LA layer renderer based on current KPI, year, and metric type
          * This method will be implemented in Phase 6 when we integrate the renderer
@@ -983,7 +964,7 @@ const useAppStore = create<AppState>()(
         // IMPORTANT: Exclude all map-related objects and temporary UI state from persistence
         // Only persist user preferences and selections
         partialize: (state) => ({
-          themeMode: state.themeMode,
+          themeMode: state.themeMode, // Persist themeMode
           activeKpi: state.activeKpi,
           currentFilters: state.currentFilters,
           siderCollapsed: state.siderCollapsed,

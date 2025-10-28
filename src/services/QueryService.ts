@@ -72,6 +72,52 @@ export default class QueryService {
   }
 
   /**
+   * Simple wrapper for getting unique values with caching
+   * @param layer - Feature layer to query
+   * @param fieldName - Field to get unique values from
+   * @returns Promise with array of unique values
+   */
+  static async getUniqueValues(
+    layer: __esri.FeatureLayer | null,
+    fieldName: string
+  ): Promise<string[]> {
+    if (!layer) {
+      console.warn(`Cannot get unique values: layer is null`);
+      return [];
+    }
+  
+    // Check cache first
+    const cacheKey = `${layer.id}_${fieldName}`;
+    const cached = uniqueValuesCache.get(cacheKey);
+    
+    if (cached && (Date.now() - cached.timestamp) < CACHE_EXPIRY_MS) {
+      console.log(`Using cached values for ${fieldName}`);
+      return cached.data;
+    }
+  
+    try {
+      // Use queryUniqueValues with empty filters to get all values
+      const values = await this.queryUniqueValues(layer, fieldName, {
+        localAuthority: [],
+        subgroup: [],
+        route: [],
+        year: []
+      });
+  
+      // Cache the result
+      uniqueValuesCache.set(cacheKey, {
+        data: values,
+        timestamp: Date.now()
+      });
+  
+      return values;
+    } catch (error) {
+      console.error(`Error getting unique values for ${fieldName}:`, error);
+      return [];
+    }
+  }
+
+  /**
    * Queries unique values for a specific field
    * Updated to handle new field names
    * @param layer - Feature layer to query

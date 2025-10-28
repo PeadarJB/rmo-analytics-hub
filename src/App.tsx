@@ -93,7 +93,6 @@ const App: React.FC = () => {
           {showFilters && (
             <div className={styles.filterPanel}>
               <EnhancedFilterPanel />
-              <LALayerControl />
             </div>
           )}
           {showChart && (
@@ -109,6 +108,16 @@ const App: React.FC = () => {
           <EnhancedStatsPanel />
         </div>
       )}
+
+      {/* NEW: Add LA Layer Control */}
+      <div style={{
+        position: 'absolute',
+        bottom: '20px',
+        left: '20px',
+        zIndex: 10
+      }}>
+        <LALayerControl />
+      </div>
     </div>
   );
 

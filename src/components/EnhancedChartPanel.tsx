@@ -184,7 +184,7 @@ const EnhancedChartPanel: React.FC = () => {
       group: clickedGroup,
       condition: clickedCondition,
       kpi: activeKpi,
-      year: currentFilters.year[0] || CONFIG.defaultYears[0]
+      year: currentFilters.year || CONFIG.defaultYear
     };
     
     const isMultiSelect = event.native && (

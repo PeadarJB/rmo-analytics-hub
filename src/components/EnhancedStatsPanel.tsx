@@ -21,13 +21,14 @@ const EnhancedStatsPanel: React.FC = () => {
   const [isCalculating, setIsCalculating] = useState(false);
   const { token } = theme.useToken();
   
-  const yearOptions = CONFIG.filters.year.options.map(o => ({
-    label: o.label,
-    value: o.value
-  }));
+  const yearOptions = [
+    { label: '2011', value: 2011 },
+    { label: '2018', value: 2018 },
+    { label: '2025', value: 2025 }
+  ];
 
   const onYearChange = async (newYear: number) => {
-    setFilters({ year: [newYear] });
+    setFilters({ year: newYear });
     // Trigger map re-rendering and statistics recalculation
     updateRenderer();
     await calculateStatistics();
@@ -39,8 +40,8 @@ const EnhancedStatsPanel: React.FC = () => {
     return () => clearTimeout(timer);
   }, [currentFilters, activeKpi]);
 
-  // The first year in the array is the one we display stats for
-  const selectedYear = currentFilters.year.length > 0 ? currentFilters.year[0] : null;
+  // Get the current selected year
+  const selectedYear = currentFilters.year || null;
 
   // Determine which stats to display
   const displayStats = isChartFilterActive ? chartFilteredStats : currentStats;

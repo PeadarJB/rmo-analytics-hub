@@ -109,7 +109,7 @@ const EnhancedFilterPanel: React.FC = () => {
           fontSize: 12,
           color: token.colorPrimary
         }}>
-          {counter} filter{counter > 1 ? 's' : ''} active. Clear All will reset while keeping year {currentFilters.year[0]}.
+          {counter} filter{counter > 1 ? 's' : ''} active. Clear All will reset while keeping year {currentFilters.year}.
         </div>
       )}
     </Card>

@@ -8,6 +8,7 @@ import { getChartThemeColors } from '@/utils/themeHelpers';
 import StatisticsService from '@/services/StatisticsService';
 import type { GroupedConditionStats } from '@/types';
 import Query from '@arcgis/core/rest/support/Query';
+import type { SummaryStatistics } from '@/types';
 
 const groupByOptions = [
   { label: 'Local Authority', value: CONFIG.fields.la },
@@ -86,7 +87,7 @@ const EnhancedChartPanel: React.FC = () => {
         } else {
           // MODIFICATION START: Add logic to handle subgroup correctly
           let simpleData;
-          const kpiField = getKPIFieldName(activeKpi, currentFilters.year[0] || CONFIG.defaultYears[0]);
+          const kpiField = getKPIFieldName(activeKpi, currentFilters.year || CONFIG.defaultYear);
           const whereClause = (roadLayer as any)?.definitionExpression || '1=1';
 
           if (groupBy === 'subgroup') {
@@ -99,7 +100,7 @@ const EnhancedChartPanel: React.FC = () => {
           } else {
             console.log('[Chart Debug] Fetching simple averages for:', {
               activeKpi,
-              year: currentFilters.year[0] || CONFIG.defaultYears[0],
+              year: currentFilters.year || CONFIG.defaultYear,
               groupBy,
               definitionExpression: whereClause
             });
@@ -116,24 +117,19 @@ const EnhancedChartPanel: React.FC = () => {
           
           data = simpleData.map(d => {
             console.log('[Chart Debug] Processing group:', d.group, 'avgValue:', d.avgValue, 'count:', d.count);
-            return {
-              group: d.group,
+            // Create a partial SummaryStatistics object for the 'stats' property
+            const partialStats: Partial<SummaryStatistics> = {
               avgValue: d.avgValue || 0,
-              totalCount: d.count || 0,
-              conditions: {
-                veryGood: { count: 0, percentage: 0 },
-                good: { count: 0, percentage: 0 },
-                fair: { count: 0, percentage: 0 },
-                poor: { count: 0, percentage: 0 },
-                veryPoor: { count: 0, percentage: 0 }
-              }
-            }
+              totalSegments: d.count || 0,
+            };
+            return ({
+              group: d.group,
+              stats: partialStats as SummaryStatistics // Cast to satisfy the type
+            });
           });
           
           console.log('[Chart Debug] Final converted data:', data);
         }
-        
-        data.sort((a, b) => b.avgValue - a.avgValue);
         
         if (!data || data.length === 0) {
           setDataStatus('no-data');
@@ -143,8 +139,13 @@ const EnhancedChartPanel: React.FC = () => {
         }
         
         const hasValidValues = stackedMode 
-          ? data.some(d => d.totalCount > 0)
-          : data.some(d => d.avgValue && d.avgValue > 0);
+          ? data.some(d => d.stats.totalSegments > 0)
+          : data.some(d => d.stats.avgValue && d.stats.avgValue > 0);
+
+        if (!stackedMode) {
+          // Sort by average value for non-stacked mode
+          data.sort((a, b) => (b.stats.avgValue || 0) - (a.stats.avgValue || 0));
+        }
           
         if (!hasValidValues) {
           setDataStatus('no-data');
@@ -381,35 +382,33 @@ const EnhancedChartPanel: React.FC = () => {
       datasets = [
         {
           label: 'Very Good',
-          data: groupedData.map(d => d.conditions.veryGood.percentage),
+          data: groupedData.map(d => d.stats.veryGoodPct),
           ...createChartColors('veryGood', groupedData)
         },
         {
           label: 'Good',
-          data: groupedData.map(d => d.conditions.good.percentage),
+          data: groupedData.map(d => d.stats.goodPct),
           ...createChartColors('good', groupedData)
         },
         {
           label: 'Fair',
-          data: groupedData.map(d => d.conditions.fair.percentage),
+          data: groupedData.map(d => d.stats.fairPct),
           ...createChartColors('fair', groupedData)
         },
         {
           label: 'Poor',
-          data: groupedData.map(d => d.conditions.poor.percentage),
+          data: groupedData.map(d => d.stats.poorPct),
           ...createChartColors('poor', groupedData)
         },
         {
           label: 'Very Poor',
-          data: groupedData.map(d => d.conditions.veryPoor.percentage),
+          data: groupedData.map(d => d.stats.veryPoorPct),
           ...createChartColors('veryPoor', groupedData)
         }
       ];
     } else {
-      const chartData = groupedData.map(d => d.avgValue);
+      const chartData = groupedData.map(d => d.stats.avgValue);
       console.log('[Chart Debug] Chart data for rendering:', chartData);
-      console.log('[Chart Debug] GroupedData avgValues:', groupedData.map(d => ({ group: d.group, avgValue: d.avgValue })));
-      
       datasets = [{
         label: `Average ${KPI_LABELS[activeKpi]}`,
         data: chartData,
@@ -472,8 +471,8 @@ const EnhancedChartPanel: React.FC = () => {
               label: (context) => {
                 if (stackedMode) {
                   const value = context.parsed.x;
-                  const conditionKey = context.dataset.label!.toLowerCase().replace(' ', '') as keyof typeof groupedData[0]['conditions'];
-                  const count = groupedData[context.dataIndex].conditions[conditionKey].count;
+                  const conditionKey = (context.dataset.label!.toLowerCase().replace(' ', '') + 'Count') as keyof SummaryStatistics;
+                  const count = (groupedData[context.dataIndex].stats as any)[conditionKey] || 0;
                   return `${context.dataset.label}: ${value.toFixed(1)}% (${count} segments)`;
                 }
                 return `${context.dataset.label}: ${context.parsed.x.toFixed(2)}`;

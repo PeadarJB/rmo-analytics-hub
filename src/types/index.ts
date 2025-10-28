@@ -23,6 +23,11 @@ export interface SummaryStatistics {
   poorPct: number;
   veryPoorPct: number;
   fairOrBetterPct: number;
+  // ADDED: Fields for avg/min/max and update timestamp
+  avgValue: number;
+  minValue: number;
+  maxValue: number;
+  lastUpdated: string;
 }
 
 export interface GroupedConditionStats {

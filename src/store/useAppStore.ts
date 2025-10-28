@@ -121,7 +121,7 @@ const initialFilters: FilterState = {
   localAuthority: [],
   subgroup: [],
   route: [],
-  year: CONFIG.defaultYears.slice()
+  year: CONFIG.defaultYear
 };
 
 const useAppStore = create<AppState>()(
@@ -252,38 +252,37 @@ const useAppStore = create<AppState>()(
           const newFilters = { ...currentFilters, ...f };
           
           // Check if year changed
-          const yearChanged = f.year && 
-            JSON.stringify(f.year) !== JSON.stringify(currentFilters.year);
+          const yearChanged = f.year !== undefined && f.year !== currentFilters.year;
 
-          // Type-check years immediately when set
-          if (newFilters.year && Array.isArray(newFilters.year)) {
-            newFilters.year = newFilters.year
-              .map(y => {
-                if (typeof y === 'string') {
-                  const parsed = parseInt(y, 10);
-                  if (!isNaN(parsed)) {
-                    console.warn(`[SetFilters] Coerced year from string to number: "${y}" → ${parsed}`);
-                    return parsed;
-                  }
-                }
-                return y;
-              })
-              .filter(y => typeof y === 'number' && y >= 2000 && y <= 2030);
-          }
-
-          // Validate year selection immediately when filters change
-          if (!newFilters.year || newFilters.year.length === 0) {
-            // Don't allow empty year selection
-            message.warning('At least one survey year must be selected. Defaulting to most recent year.');
-            newFilters.year = [CONFIG.defaultYears[0]];
+          // Type-check and validate year if provided
+          if (f.year !== undefined) {
+            if (typeof f.year === 'string') {
+              const parsed = parseInt(f.year, 10);
+              if (!isNaN(parsed) && parsed >= 2000 && parsed <= 2030) {
+                console.warn(`[SetFilters] Coerced year from string to number: "${f.year}" → ${parsed}`);
+                newFilters.year = parsed;
+              } else {
+                console.warn(`[SetFilters] Invalid year "${f.year}", using default`);
+                newFilters.year = CONFIG.defaultYear;
+              }
+            } else if (typeof f.year === 'number' && f.year >= 2000 && f.year <= 2030) {
+              newFilters.year = f.year;
+            } else {
+              console.warn(`[SetFilters] Invalid year value, using default`);
+              newFilters.year = CONFIG.defaultYear;
+            }
           }
           
           set({ currentFilters: newFilters });
           
           const { roadLayer, activeKpi, themeMode, updateLALayerRenderer } = get();
           
-          // Apply definition expression
-          const definitionExpression = QueryService.buildDefinitionExpression(newFilters);
+          // Apply definition expression (year NOT included in WHERE clause)
+          const definitionExpression = QueryService.buildDefinitionExpression({
+            localAuthority: newFilters.localAuthority,
+            subgroup: newFilters.subgroup,
+            route: newFilters.route
+          });
           
           if (roadLayer) {
             roadLayer.definitionExpression = definitionExpression;
@@ -291,7 +290,7 @@ const useAppStore = create<AppState>()(
             
             // Update renderer if year changed
             if (yearChanged) {
-              const year = newFilters.year[0] || CONFIG.defaultYears[0];
+              const year = newFilters.year || CONFIG.defaultYear;
               // Use createRenderer as requested
               const renderer = RendererService.createRenderer(activeKpi, year, themeMode);
               roadLayer.renderer = renderer;
@@ -306,16 +305,14 @@ const useAppStore = create<AppState>()(
           const state = get();
           
           // Preserve current year selection
-          const currentYear = state.currentFilters.year.length > 0 
-            ? state.currentFilters.year 
-            : [CONFIG.defaultYears[0]];
+          const currentYear = state.currentFilters.year || CONFIG.defaultYear;
           
           // Reset filters while maintaining year
           const resetFilters = { 
             localAuthority: [],
             subgroup: [],
             route: [],
-            year: currentYear
+            year: currentYear,
           };
           
           set({ 
@@ -349,7 +346,7 @@ const useAppStore = create<AppState>()(
             await state.calculateStatistics();
             
             message.success(
-              `Filters cleared. Showing all ${state.activeKpi.toUpperCase()} data for ${currentYear[0]}`,
+              `Filters cleared. Showing all ${state.activeKpi.toUpperCase()} data for ${currentYear}`,
               3
             );
             
@@ -361,46 +358,30 @@ const useAppStore = create<AppState>()(
           }
         },
 
-        // (1) Enhanced validator replacing the previous implementation
+        /**
+         * Validates and fixes filter state to ensure data integrity
+         * @returns Validated FilterState
+         */
         validateAndFixFilters: (): FilterState => {
           const state = get();
           const currentFilters = { ...state.currentFilters };
           
-          // Ensure year array exists and contains only numbers
-          if (!currentFilters.year || !Array.isArray(currentFilters.year)) {
-            console.warn('[Data Validation] Year filter missing or invalid, resetting to default');
-            currentFilters.year = [CONFIG.defaultYears[0]];
-          } else {
-            // Convert all year values to numbers and filter out invalid ones
-            const validatedYears = currentFilters.year
-              .map(y => {
-                if (typeof y === 'string') {
-                  const numYear = parseInt(y, 10);
-                  if (!isNaN(numYear) && numYear >= 2000 && numYear <= 2030) {
-                    console.warn(`[Data Validation] Converted year from string "${y}" to number ${numYear}`);
-                    return numYear;
-                  }
-                  console.warn(`[Data Validation] Invalid year value "${y}" removed from filter`);
-                  return null;
-                }
-                if (typeof y === 'number' && y >= 2000 && y <= 2030) {
-                  return y;
-                }
-                console.warn(`[Data Validation] Invalid year value ${y} removed from filter`);
-                return null;
-              })
-              .filter((y): y is number => y !== null);
-            
-            // Ensure at least one valid year remains
-            if (validatedYears.length === 0) {
-              console.warn('[Data Validation] No valid years after validation, using default');
-              currentFilters.year = [CONFIG.defaultYears[0]];
+          // Validate year (single value)
+          if (typeof currentFilters.year === 'string') {
+            const numYear = parseInt(currentFilters.year, 10);
+            if (!isNaN(numYear) && numYear >= 2000 && numYear <= 2030) {
+              console.warn(`[Data Validation] Converted year from string "${currentFilters.year}" to number ${numYear}`);
+              currentFilters.year = numYear;
             } else {
-              currentFilters.year = validatedYears;
+              console.warn(`[Data Validation] Invalid year value "${currentFilters.year}", using default`);
+              currentFilters.year = CONFIG.defaultYear;
             }
+          } else if (typeof currentFilters.year !== 'number' || currentFilters.year < 2000 || currentFilters.year > 2030) {
+            console.warn('[Data Validation] Year filter missing or invalid, resetting to default');
+            currentFilters.year = CONFIG.defaultYear;
           }
           
-          // Log the final validated years for debugging
+          // Log the final validated year for debugging
           console.log('[Data Validation] Final year filter:', currentFilters.year);
           
           // Update state with validated filters
@@ -554,9 +535,17 @@ const useAppStore = create<AppState>()(
           const state = get();
           const { roadLayer } = state;
           
-          // (2) Validate and log filters before applying
+          // Validate filters before applying
           const validatedFilters = state.validateAndFixFilters();
-          console.log('[ApplyFilters] Using validated filters with years:', validatedFilters.year);
+          if (typeof validatedFilters.year !== 'number') {
+            console.error('[Filters] Year validation failed, cannot apply filters.');
+            message.error('Year filter is invalid. Please refresh the page.');
+            set({ 
+              currentStats: null,
+              showStats: false 
+            });
+            return;
+          }
           
           if (!roadLayer) {
             message.error('Road layer is not loaded yet. Please wait a moment and try again.');
@@ -567,10 +556,6 @@ const useAppStore = create<AppState>()(
             return;
           }
           
-          const clauses: string[] = [];
-
-          
-
           // Local Authority filter
           if (validatedFilters.localAuthority.length) {
             const inVals = validatedFilters.localAuthority
@@ -618,15 +603,12 @@ const useAppStore = create<AppState>()(
             }
           }
 
-          // Route filter
-          if (validatedFilters.route.length) {
-            const inVals = validatedFilters.route
-              .map(v => `'${v.replace("'", "''")}'`)
-              .join(',');
-            clauses.push(`${CONFIG.fields.route} IN (${inVals})`);
-          }
-          
-          const where = clauses.length ? clauses.join(' AND ') : '1=1';
+          // Apply definition expression (year NOT included in WHERE clause)
+          const where = QueryService.buildDefinitionExpression({
+            localAuthority: validatedFilters.localAuthority,
+            subgroup: validatedFilters.subgroup,
+            route: validatedFilters.route
+          });
           (roadLayer as any).definitionExpression = where;
 
           const filterCount = 
@@ -655,7 +637,7 @@ const useAppStore = create<AppState>()(
             if (filterCount > 0) {
               message.success(`${filterCount} filter${filterCount > 1 ? 's' : ''} applied`);
             } else {
-              message.info('Showing all data for ' + validatedFilters.year[0]);
+              message.info('Showing all data for ' + validatedFilters.year);
             }
             
           } catch (error) {
@@ -674,16 +656,16 @@ const useAppStore = create<AppState>()(
             return;
           }
 
-          // (3) Validate and guard before stats
+          // Validate filters before calculating
           const validatedFilters = state.validateAndFixFilters();
-          if (!validatedFilters.year.length || validatedFilters.year.some(y => typeof y !== 'number')) {
+          if (typeof validatedFilters.year !== 'number') {
             console.error('[Statistics] Year validation failed, cannot calculate statistics');
             return;
           }
           
           try {
             const stats = await StatisticsService.computeSummary(
-              roadLayer, // Fixed: Added computeSummary to StatisticsService
+              roadLayer,
               validatedFilters, 
               activeKpi
             );
@@ -702,7 +684,7 @@ const useAppStore = create<AppState>()(
             console.error('Error calculating statistics:', error);
             message.error('Failed to calculate statistics');
             
-            const year = state.currentFilters.year[0] || CONFIG.defaultYears[0];
+            const year = validatedFilters.year || CONFIG.defaultYear;
             const emptyStats: SummaryStatistics = {
               kpi: activeKpi.toUpperCase(),
               year: year,
@@ -734,7 +716,7 @@ const useAppStore = create<AppState>()(
           }
           
           const validatedFilters = state.validateAndFixFilters();
-          const year = validatedFilters.year[0];
+          const year = validatedFilters.year;
           
           try {
             const renderer = RendererService.createKPIRenderer(activeKpi, year, themeMode);

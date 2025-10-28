@@ -18,7 +18,7 @@ import MapViewService from '@/services/MapViewService';
 import LARendererService from '@/services/LARendererService';
 import QueryService from '@/services/QueryService';
 import StatisticsService from '@/services/StatisticsService';
-import RendererService from '@/services/RendererService';
+import RendererService from '@/services/RendererService'; // Keep this import
 import type { FilterState, SummaryStatistics } from '@/types';
 
 interface ChartSelection {
@@ -188,7 +188,8 @@ const useAppStore = create<AppState>()(
           // Update road layer renderer
           if (roadLayer) {
             const year = currentFilters.year || CONFIG.defaultYear;
-            const renderer = RendererService.createRenderer(activeKpi, year, mode);
+            // [SPRINT 1 / TASK-001] Also updated here to use createRenderer
+            const renderer = RendererService.createRenderer(activeKpi, year, mode, true);
             roadLayer.renderer = renderer;
           }
     
@@ -291,8 +292,9 @@ const useAppStore = create<AppState>()(
             // Update renderer if year changed
             if (yearChanged) {
               const year = newFilters.year || CONFIG.defaultYear;
+              // [SPRINT 1 / TASK-001] Also updated here to use createRenderer
               // Use createRenderer as requested
-              const renderer = RendererService.createRenderer(activeKpi, year, themeMode);
+              const renderer = RendererService.createRenderer(activeKpi, year, themeMode, true);
               roadLayer.renderer = renderer;
               
               // NEW: Update LA layer renderer when year changes
@@ -514,7 +516,13 @@ const useAppStore = create<AppState>()(
               get().updateRenderer();
             }
 
-            if (state.mapView) {
+            // [SPRINT 1 / TASK-003]
+            // Preload all other renderers in the background (fire and forget)
+            // to make subsequent KPI/year changes instantaneous.
+            RendererService.preloadAllRenderers(get().themeMode)
+              .catch(err => console.warn("Background renderer preloading failed:", err));
+
+            if (state.mapView) { // This destroys the *previous* view, which is correct
               state.mapView.destroy();
             }
             
@@ -667,7 +675,10 @@ const useAppStore = create<AppState>()(
           const year = validatedFilters.year;
           
           try {
-            const renderer = RendererService.createKPIRenderer(activeKpi, year, themeMode);
+            // [SPRINT 1 / TASK-001]
+            // Switched from deprecated createKPIRenderer (raw values)
+            // to createRenderer (pre-calculated class fields) for performance.
+            const renderer = RendererService.createRenderer(activeKpi, year, themeMode, true);
             (roadLayer as any).renderer = renderer;
             
             // CRITICAL FIX: Force layer to refresh with new renderer

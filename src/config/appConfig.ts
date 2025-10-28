@@ -266,7 +266,7 @@ export const CONFIG = {
   webMapId: '3caed4039c514e20b4e50039b92cd27b',  // ✅ UPDATED
   roadNetworkLayerTitle: 'RoadNetwork Temporal 2011 2025',  // ✅ UPDATED
   roadNetworkLayerSwipeTitle: 'RoadNetwork Temporal 2011 2025',  // ✅ UPDATED
-  laPolygonLayerTitle: 'RMO_LA_data',  // Keep for future reference
+  laPolygonLayerTitle: 'RMO LA data',  // Keep for future reference
   
   fields: {
     // Raw value fields - UPDATED NAMES

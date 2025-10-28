@@ -13,38 +13,31 @@ const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
 export default class QueryService {
   /**
-   * Builds a definition expression (SQL WHERE clause) from active filters
-   * Updated to use new field names from schema refactor
-   * @param filters - Active filter state
+   * Builds a definition expression (SQL WHERE clause) from active filters.
+   * NOTE: Year is NOT included - it determines which field to query (e.g., AIRI_2025).
+   * @param filters - Active filter state (without year).
    * @returns SQL WHERE clause string
    */
   static buildDefinitionExpression(filters: {
     localAuthority: string[];
     subgroup: number[];
     route: string[];
-    year: number[];
   }): string {
     const whereClauses: string[] = [];
 
-    // Local Authority filter - UPDATED FIELD NAME
+    // Local Authority filter
     if (filters.localAuthority && filters.localAuthority.length > 0) {
       const laValues = filters.localAuthority.map(la => `'${la}'`).join(', ');
       whereClauses.push(`${CONFIG.fields.la} IN (${laValues})`);
     }
 
-    // Route filter - UPDATED FIELD NAME
+    // Route filter
     if (filters.route && filters.route.length > 0) {
       const routeValues = filters.route.map(r => `'${r}'`).join(', ');
       whereClauses.push(`${CONFIG.fields.route} IN (${routeValues})`);
     }
 
-    // Year filter
-    if (filters.year && filters.year.length > 0) {
-      const yearValues = filters.year.join(', ');
-      whereClauses.push(`${CONFIG.fields.year} IN (${yearValues})`);
-    }
-
-    // Subgroup filter - UPDATED FIELD NAMES
+    // Subgroup filter
     if (filters.subgroup && filters.subgroup.length > 0) {
       const subgroupClauses = filters.subgroup.map(code => {
         const fieldName = SUBGROUP_CODE_TO_FIELD[code];
@@ -100,8 +93,7 @@ export default class QueryService {
       const values = await this.queryUniqueValues(layer, fieldName, {
         localAuthority: [],
         subgroup: [],
-        route: [],
-        year: []
+        route: []
       });
   
       // Cache the result
@@ -119,10 +111,9 @@ export default class QueryService {
 
   /**
    * Queries unique values for a specific field
-   * Updated to handle new field names
    * @param layer - Feature layer to query
    * @param fieldName - Field to get unique values from
-   * @param currentFilters - Current filter state
+   * @param currentFilters - Current filter state (without year)
    * @returns Promise with array of unique values
    */
   static async queryUniqueValues(
@@ -132,7 +123,6 @@ export default class QueryService {
       localAuthority: string[];
       subgroup: number[];
       route: string[];
-      year: number[];
     }
   ): Promise<string[]> {
     try {
@@ -144,8 +134,6 @@ export default class QueryService {
         tempFilters.localAuthority = [];
       } else if (fieldName === CONFIG.fields.route) {
         tempFilters.route = [];
-      } else if (fieldName === CONFIG.fields.year) {
-        tempFilters.year = [];
       }
 
       const where = this.buildDefinitionExpression(tempFilters);
@@ -404,7 +392,7 @@ export default class QueryService {
    * Queries the extent (bounding box) for the current filter selection
    * Used for zooming to filtered features
    * @param layer - Feature layer to query
-   * @param filters - Current filter state
+   * @param filters - Current filter state (without year)
    * @returns Promise with extent
    */
   static async queryExtentForFilters(
@@ -413,7 +401,6 @@ export default class QueryService {
       localAuthority: string[];
       subgroup: number[];
       route: string[];
-      year: number[];
     }
   ): Promise<__esri.Extent | null> {
     try {

@@ -4,7 +4,7 @@ export interface FilterState {
   localAuthority: string[];
   subgroup: number[];
   route: string[];
-  year: number[];
+  year: number;
 }
 
 export interface SummaryStatistics {

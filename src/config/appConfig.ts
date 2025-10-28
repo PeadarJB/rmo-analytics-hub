@@ -287,8 +287,8 @@ export const CONFIG = {
     
     // Other fields - UPDATED NAMES
     route: 'Route',           // was: 'Roads_Joined_Route'
-    year: 'SurveyYear',       // unchanged
     la: 'LA',                 // was: 'Roads_Joined_LA'
+    // NOTE: Year removed - it's embedded in field names (e.g., AIRI_2025)
     subgroupPlaceholder: 'RoadGroupCode',
     
     // NEW: LA layer fields
@@ -319,14 +319,11 @@ export const CONFIG = {
       label: 'Route', 
       field: 'Route',         // was: 'Roads_Joined_Route'
       type: 'multi-select' as const 
-    },
-    year: {
-      id: 'year', label: 'Survey Year', field: 'SurveyYear', type: 'multi-select' as const,
-      options: [{ label: '2011', value: 2011 }, { label: '2018', value: 2018 }, { label: '2025', value: 2025 }]
     }
+    // NOTE: Year filter removed - year is now a display mode selector, not a data filter
   },
   defaultKPI: 'iri' as KPIKey,
-  defaultYears: [2025],
+  defaultYear: 2025,          // ✅ Changed from array to single value
   defaultGroupBy: 'LA',       // was: 'Roads_Joined_LA'
   map: { center: [-8.0, 53.3] as [number, number], zoom: 7 }
 } as const;
@@ -407,4 +404,3 @@ export function getSimplifiedConditionClass(
 }
 
 export type SubgroupOption = typeof CONFIG.filters.subgroup.options[number];
-export type YearOption = typeof CONFIG.filters.year.options[number];

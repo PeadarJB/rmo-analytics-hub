@@ -187,7 +187,7 @@ const useAppStore = create<AppState>()(
     
           // Update road layer renderer
           if (roadLayer) {
-            const year = currentFilters.year[0] || CONFIG.defaultYears[0];
+            const year = currentFilters.year || CONFIG.defaultYear;
             const renderer = RendererService.createRenderer(activeKpi, year, mode);
             roadLayer.renderer = renderer;
           }
@@ -534,7 +534,12 @@ const useAppStore = create<AppState>()(
         applyFilters: async () => {
           const state = get();
           const { roadLayer } = state;
-          
+
+          if (!roadLayer) {
+            message.error('Road layer not loaded yet');
+            return;
+          }
+
           // Validate filters before applying
           const validatedFilters = state.validateAndFixFilters();
           if (typeof validatedFilters.year !== 'number') {
@@ -546,75 +551,18 @@ const useAppStore = create<AppState>()(
             });
             return;
           }
-          
-          if (!roadLayer) {
-            message.error('Road layer is not loaded yet. Please wait a moment and try again.');
-            set({ 
-              currentStats: null,
-              showStats: false 
-            });
-            return;
-          }
-          
-          // Local Authority filter
-          if (validatedFilters.localAuthority.length) {
-            const inVals = validatedFilters.localAuthority
-              .map(v => `'${v.replace("'", "''")}'`)
-              .join(',');
-            clauses.push(`${CONFIG.fields.la} IN (${inVals})`);
-          }
 
-          // Subgroup filter - using centralized mapping from appConfig
-          if (validatedFilters.subgroup.length) {
-            const subgroupClauses: string[] = [];
-            
-            for (const fieldNameOrValue of validatedFilters.subgroup) {
-              let fieldName: string | undefined;
-              
-              const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => {
-              if (typeof fieldNameOrValue === 'string') {
-                return opt.value === fieldNameOrValue;
-              } else if (typeof fieldNameOrValue === 'number') {
-                return opt.code === fieldNameOrValue;
-              }
-              return false;
-            });
-              
-              if (subgroupOption) {
-                fieldName = subgroupOption.value as string;
-              } else if (typeof fieldNameOrValue === 'number') {
-                fieldName = SUBGROUP_CODE_TO_FIELD[fieldNameOrValue];
-              } else {
-                fieldName = fieldNameOrValue as string;
-              }
-              
-              if (fieldName === 'Rural') {
-                subgroupClauses.push(
-                  `(Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND ` +
-                  `Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)`
-                );
-              } else if (fieldName && fieldName !== 'Rural') {
-                subgroupClauses.push(`${fieldName} = 1`);
-              }
-            }
-            
-            if (subgroupClauses.length > 0) {
-              clauses.push(`(${subgroupClauses.join(' OR ')})`);
-            }
-          }
-
-          // Apply definition expression (year NOT included in WHERE clause)
+          // Build definition expression (year NOT included in WHERE clause)
           const where = QueryService.buildDefinitionExpression({
             localAuthority: validatedFilters.localAuthority,
             subgroup: validatedFilters.subgroup,
             route: validatedFilters.route
           });
-          (roadLayer as any).definitionExpression = where;
 
           const filterCount = 
             (validatedFilters.localAuthority.length > 0 ? 1 : 0) +
             (validatedFilters.subgroup.length > 0 ? 1 : 0) +
-            (validatedFilters.route.length > 0 ? 1 : 0)
+            (validatedFilters.route.length > 0 ? 1 : 0);
           
           set({ appliedFiltersCount: filterCount });
 
@@ -626,7 +574,7 @@ const useAppStore = create<AppState>()(
             await roadLayer.when();
             
             // THEN zoom to the filtered extent
-            await QueryService.zoomToDefinition(state.mapView, roadLayer, where); // Fixed: Added zoomToDefinition to QueryService
+            await QueryService.zoomToDefinition(state.mapView, roadLayer, where);
             
             // THEN update renderer (this will refresh the layer)
             state.updateRenderer();
@@ -924,7 +872,7 @@ const useAppStore = create<AppState>()(
             return;
           }
           // Get the active year (use first selected year)
-          const year = currentFilters.year[0] || 2025; // default to 2025
+          const year = currentFilters.year || CONFIG.defaultYear;
 
           console.log(`Updating LA renderer: ${activeKpi}/${year}/${laMetricType}/${themeMode}`);
           

@@ -5,7 +5,8 @@ import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
 import SimpleSwipePanel from '@/components/SimpleSwipePanel';
-import { CONFIG, KPI_LABELS, type KPIKey } from '@/config/appConfig';
+import { CONFIG } from '@/config/appConfig';
+import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;

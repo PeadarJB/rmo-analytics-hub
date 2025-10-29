@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, FC } from 'react';
 import { Card, Select, Button, Space, Slider, Radio, Tag, message, Divider, theme } from 'antd';
-import { SwapOutlined, CloseOutlined } from '@ant-design/icons';
-import type { KPIKey } from '@/config/appConfig';
+import { CloseOutlined, SwapOutlined } from '@ant-design/icons';
+import type { KPIKey } from '@/config/kpiConfig';
 
 // Store imports
 import useAppStore from '@/store/useAppStore';
@@ -17,7 +17,8 @@ import type Layer from '@arcgis/core/layers/Layer';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 
 // Config imports
-import { CONFIG, KPI_LABELS, LA_LAYER_CONFIG } from '@/config/appConfig';
+import { CONFIG, LA_LAYER_CONFIG, SWIPE_LAYER_CONFIG } from '@/config/appConfig';
+import { KPI_LABELS } from '@/config/kpiConfig';
 
 interface SimpleSwipePanelProps {}
 
@@ -31,7 +32,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
     webmap,
     isSwipeActive,
     activeKpi,
-    laPolygonLayers,
+    laLayerCache,
     leftSwipeYear,
     rightSwipeYear,
     enterSwipeMode,
@@ -74,29 +75,21 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
    * Finds a specific LA polygon layer from the store's Map object or webmap.
    */
   const findLayer = (kpi: KPIKey, year: number): FeatureLayer | undefined => {
+    const cacheKey = `${kpi}_${year}_average`;
+    console.log(`Looking for layer in cache with key: "${cacheKey}"`);
+    
+    const layer = laLayerCache.get(cacheKey);
+    if (layer) {
+      console.log(`Found layer in cache: ${layer.title}`);
+      return layer;
+    }
+    
+    // Fallback to searching webmap if not in cache (should be rare)
     const layerTitle = LA_LAYER_CONFIG.layerTitlePattern(kpi, year);
-    console.log(`Looking for layer: "${layerTitle}"`);
-    
-    // First try from the cached laPolygonLayers
-    if (laPolygonLayers) {
-      const layer = laPolygonLayers.get(layerTitle);
-      if (layer) {
-        console.log(`Found layer in cache: ${layerTitle}`);
-        return layer;
-      }
-    }
-    
-    // If not in cache, search in webmap
-    if (webmap) {
-      const layer = webmap.allLayers.find((l: any) => l.title === layerTitle) as FeatureLayer | undefined;
-      if (layer) {
-        console.log(`Found layer in webmap: ${layerTitle}`);
-        return layer;
-      }
-    }
-    
-    console.warn(`Layer not found: ${layerTitle}`);
-    console.log('Available layers:', laPolygonLayers ? Array.from(laPolygonLayers.keys()) : 'No cached layers');
+    console.warn(`Layer not found in cache for key "${cacheKey}". Searching webmap for title "${layerTitle}"...`);
+    const webmapLayer = webmap?.allLayers.find((l: any) => l.title === layerTitle) as FeatureLayer | undefined;
+    if (webmapLayer) return webmapLayer;
+
     return undefined;
   };
 
@@ -126,8 +119,8 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       }
       
       // Hide all LA layers first
-      if (laPolygonLayers) {
-        laPolygonLayers.forEach(layer => {
+      if (laLayerCache) {
+        laLayerCache.forEach((layer: FeatureLayer) => {
           layer.visible = false;
         });
       }
@@ -185,8 +178,8 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
         
         if (leftLayer && rightLayer && swipeWidget) {
           // Hide all LA layers
-          if (laPolygonLayers) {
-            laPolygonLayers.forEach(layer => {
+          if (laLayerCache) {
+            laLayerCache.forEach((layer: FeatureLayer) => {
               layer.visible = false;
             });
           }
@@ -205,7 +198,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       
       updateSwipeLayers();
     }
-  }, [activeKpi, isSwipeActive, swipeWidget, leftYear, rightYear, laPolygonLayers]);
+  }, [activeKpi, isSwipeActive, swipeWidget, leftYear, rightYear, laLayerCache, findLayer]);
 
   const updatePosition = (value: number) => {
     setPosition(value);

@@ -376,13 +376,14 @@ export default class StatisticsService {
    * @returns A promise that resolves to SummaryStatistics.
    */
   static async computeSummary(
-    layer: __esri.FeatureLayer,
+    layer: __esri.FeatureLayer | null,
     filters: FilterState,
     kpi: KPIKey
   ): Promise<SummaryStatistics> {
+    if (!layer) {
+      throw new Error('Road layer not loaded - cannot calculate statistics');
+    }
     const year = filters.year || CONFIG.defaultYear;
-    
-    // Check if the layer has the pre-calculated class field for the given KPI and year
     const classFieldName = getKPIFieldName(kpi, year, true);
     const hasClassField = layer.fields.some(field => field.name === classFieldName);
 
@@ -399,14 +400,12 @@ export default class StatisticsService {
    * Compute grouped statistics for charts (e.g., by Local Authority, Route, etc.)
    */
   static async computeGroupedStatistics(
-    layer: FeatureLayer | null,
+    layer: __esri.FeatureLayer,
     filters: FilterState,
     activeKpi: KPIKey,
     groupByField: string
   ): Promise<any[]> {
-    if (!layer) {
-      return this.getPlaceholderGroupedStats(groupByField);
-    }
+    // No layer check needed, caller must ensure layer exists
 
     try {
       const year = filters.year || CONFIG.defaultYear;
@@ -434,7 +433,7 @@ export default class StatisticsService {
 
     } catch (error) {
       console.error('Error computing grouped statistics:', error);
-      return this.getPlaceholderGroupedStats(groupByField);
+      throw new Error(`Failed to compute grouped statistics for ${groupByField}.`);
     }
   }
 
@@ -445,14 +444,12 @@ export default class StatisticsService {
    * UPDATED: Now includes avg/min/max in summary
    */
   static async computeGroupedStatisticsWithConditions(
-    layer: FeatureLayer | null,
+    layer: __esri.FeatureLayer,
     filters: FilterState,
     activeKpi: KPIKey,
     groupByField: string
   ): Promise<GroupedConditionStats[]> {
-    if (!layer) {
-      return this.getPlaceholderGroupedConditionStats(groupByField);
-    }
+    // No layer check needed, caller must ensure layer exists
 
     try {
       const year = filters.year || CONFIG.defaultYear;
@@ -580,70 +577,8 @@ export default class StatisticsService {
 
     } catch (error) {
       console.error('Error computing grouped condition statistics:', error);
-      return this.getPlaceholderGroupedConditionStats(groupByField);
+      throw new Error(`Failed to compute grouped condition statistics for ${groupByField}.`);
     }
-  }
-
-  /**
-   * Placeholder stats (now 5-class shape)
-   */
-  private static getPlaceholderStats(activeKpi: KPIKey): SummaryStatistics {
-    const mockValues = {
-      iri:  { avg: 4.5, min: 2.1, max: 8.3 },
-      rut:  { avg: 8.2, min: 3.5, max: 18.1 },
-      psci: { avg: 6.8, min: 3,   max: 9 },
-      csc:  { avg: 0.45, min: 0.32, max: 0.58 },
-      mpd:  { avg: 0.75, min: 0.4,  max: 1.2 },
-      lpv3: { avg: 4.8, min: 1.5,   max: 9.2 }
-    } as const;
-
-    const v = mockValues[activeKpi];
-
-    return {
-      kpi: activeKpi.toUpperCase(),
-      year: CONFIG.defaultYear,
-      totalSegments: 200,
-      totalLengthKm: 20, // 200 * 0.1km = 20 km
-      veryGoodCount: 60,
-      goodCount: 60,
-      fairCount: 40,
-      poorCount: 30,
-      veryPoorCount: 10,
-      veryGoodPct: 30,
-      goodPct: 30,
-      fairPct: 20,
-      poorPct: 15,
-      veryPoorPct: 5,
-      fairOrBetterPct: 80,
-      // ADDED
-      avgValue: v.avg,
-      minValue: v.min,
-      maxValue: v.max,
-      lastUpdated: new Date().toISOString()
-    };
-  }
-
-  private static getPlaceholderGroupedStats(groupByField: string): any[] {
-    const groups = groupByField.includes('LA')
-      ? ['Dublin City', 'Cork County', 'Galway County', 'Limerick City']
-      : ['R123', 'R456', 'R750', 'R999'];
-
-    return groups.map(g => ({
-      group: g,
-      avgValue: Math.random() * 5 + 2,
-      count: Math.floor(Math.random() * 50 + 10)
-    }));
-  }
-
-  private static getPlaceholderGroupedConditionStats(groupByField: string): GroupedConditionStats[] {
-    const groups = groupByField.includes('LA')
-      ? ['Dublin City', 'Cork County', 'Galway County', 'Limerick City']
-      : ['R123', 'R456', 'R750', 'R999'];
-
-    return groups.map(g => {
-      const stats = this.getPlaceholderStats('iri');
-      return { group: g, stats };
-    });
   }
 
   /**

@@ -115,6 +115,14 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
+
+      if (!roadLayer) {
+        setDataStatus('no-data');
+        setErrorDetails('Road layer not available.');
+        setGroupedData([]);
+        setLoading(false);
+        return;
+      }
       
       try {
         setDataStatus('loading');

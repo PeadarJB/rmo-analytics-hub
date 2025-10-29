@@ -2,11 +2,10 @@ import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import Query from '@arcgis/core/rest/support/Query';
 import {
   CONFIG,
-  KPIKey,
-  KPI_THRESHOLDS,
   getKPIFieldName,
   SEGMENT_LENGTH_KM
 } from '@/config/appConfig';
+import { KPIKey, KPI_THRESHOLDS } from '@/config/kpiConfig';
 import QueryService from './QueryService';
 import type { FilterState, SummaryStatistics, GroupedConditionStats } from '@/types';
 

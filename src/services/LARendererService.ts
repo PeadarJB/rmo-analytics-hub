@@ -1,14 +1,13 @@
 import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';
 import SimpleFillSymbol from '@arcgis/core/symbols/SimpleFillSymbol';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';
-import { 
-  KPIKey, 
-  LAMetricType, 
-  LA_FIELD_PATTERNS, 
+import {
+  LAMetricType,
+  LA_FIELD_PATTERNS,
   LA_COLOR_GRADIENTS,
-  LA_PERCENTAGE_RANGES,
-  KPI_THRESHOLDS
+  LA_PERCENTAGE_RANGES
 } from '@/config/appConfig';
+import { KPIKey, KPI_THRESHOLDS } from '@/config/kpiConfig';
 
 /**
  * Service for creating ArcGIS renderers for LA polygon layers

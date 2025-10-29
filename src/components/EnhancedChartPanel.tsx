@@ -3,7 +3,8 @@ import { Card, Select, Space, Spin, Alert, theme, Switch, message, Button, Tag }
 import { Chart, ChartConfiguration, ChartEvent, ActiveElement } from 'chart.js/auto';
 import { useDebouncedCallback } from '@/hooks/useDebounce';
 import useAppStore from '@/store/useAppStore';
-import { CONFIG, KPI_LABELS, RENDERER_CONFIG, KPI_THRESHOLDS, type KPIKey, getKPIFieldName } from '@/config/appConfig';
+import { CONFIG, RENDERER_CONFIG, getKPIFieldName } from '@/config/appConfig';
+import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 import QueryService from '@/services/QueryService';
 import { getChartThemeColors } from '@/utils/themeHelpers';
 import StatisticsService from '@/services/StatisticsService';

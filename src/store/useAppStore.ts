@@ -5,15 +5,14 @@ import type WebMap from '@arcgis/core/WebMap';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import type Extent from '@arcgis/core/geometry/Extent';
 import { message } from 'antd'; // ADD LAMetricType
-import { 
-  CONFIG, 
-  KPI_LABELS, 
-  KPIKey,
+import {
+  CONFIG,
   LA_LAYER_CONFIG,
-  SUBGROUP_CODE_TO_FIELD, 
-  SubgroupOption 
-  , LAMetricType
+  SUBGROUP_CODE_TO_FIELD,
+  SubgroupOption,
+  LAMetricType
 } from '@/config/appConfig';
+import { KPIKey, KPI_LABELS } from '@/config/kpiConfig';
 import MapViewService from '@/services/MapViewService';
 import LARendererService from '@/services/LARendererService';
 import QueryService from '@/services/QueryService';
@@ -73,6 +72,7 @@ interface AppState {
   laLayer: __esri.FeatureLayer | null;
   laLayerVisible: boolean;
   laMetricType: LAMetricType;
+  laLayerCache: Map<string, FeatureLayer>;
 
   // Actions
   initializeMap: (containerId: string) => Promise<void>;
@@ -168,6 +168,7 @@ const useAppStore = create<AppState>()(
         // NEW: LA Layer Initial State
         laLayer: null,
         laLayerVisible: false,
+        laLayerCache: new Map(),
         laMetricType: 'average',
 
         setError: (err) => set({ error: err }),
@@ -460,6 +461,32 @@ const useAppStore = create<AppState>()(
               CONFIG.webMapId
             );
             
+            // ✅ ADD: Build LA layer cache for O(1) lookups
+            const laCache = new Map<string, FeatureLayer>();
+            
+            webmap.layers.forEach(layer => {
+              const layerTitle = layer.title;
+              
+              // Only proceed if the layer has a title
+              if (layerTitle) {
+                // Check if this is an LA polygon layer
+                // Pattern: "Average [KPI] [YEAR]"
+                const laPattern = /^Average\s+(IRI|RUT|PSCI|CSC|MPD|LPV)\s+(2011|2018|2025)$/i;
+                const match = layerTitle.match(laPattern);
+                
+                if (match && layer.type === 'feature') {
+                  const kpi = match[1].toLowerCase();
+                  const year = parseInt(match[2]);
+                  
+                  // Store with consistent key format
+                  const cacheKey = `${kpi}_${year}_average`;  // e.g., "iri_2025_average"
+                  laCache.set(cacheKey, layer as FeatureLayer);
+                  
+                  console.log(`[LA Cache] Registered: ${cacheKey} → "${layerTitle}"`);
+                }
+              }
+            });
+            
             // Store reference on container for future guard checks
             (container as any).__esri_mapview = view;
             
@@ -506,6 +533,7 @@ const useAppStore = create<AppState>()(
               roadLayer: road ?? null,
               roadLayerSwipe: roadSwipe ?? null,
               initialExtent: view.extent ?? null,
+              laLayerCache: laCache,
               loading: false,
               mapInitialized: true, // Mark as initialized
               error: null
@@ -891,9 +919,65 @@ const useAppStore = create<AppState>()(
           get().updateLALayerRenderer();
         },
 
-        // This method is no longer needed as we only have one LA layer whose visibility
-        // is directly controlled by `laLayerVisible` state and `setLALayerVisible` action.
-        updateLALayerVisibility: () => { /* No-op */ },
+        /**
+         * Updates LA polygon layer visibility using cached layer references.
+         * O(1) lookup performance vs O(n) layer searching.
+         */
+        updateLALayerVisibility: () => {
+          const {
+            activeKpi,
+            leftSwipeYear,
+            rightSwipeYear,
+            currentPage,
+            laLayerCache
+          } = get();
+          
+          // Fast exit if cache not built yet
+          if (laLayerCache.size === 0) {
+            console.warn('[LA Visibility] Layer cache not initialized yet');
+            return;
+          }
+          
+          const startTime = performance.now();
+          const shouldShow = currentPage === 'condition-summary';
+          
+          // Build keys for layers that should be visible
+          const leftKey = `${activeKpi}_${leftSwipeYear}_average`;
+          const rightKey = `${activeKpi}_${rightSwipeYear}_average`;
+          
+          let updatedCount = 0;
+          
+          // Hide all LA layers first (fast iteration over cached layers only)
+          for (const [key, layer] of laLayerCache.entries()) {
+            if (layer.visible) {
+              layer.visible = false;
+              updatedCount++;
+            }
+          }
+          
+          // Show only the relevant layers
+          if (shouldShow) {
+            const leftLayer = laLayerCache.get(leftKey);
+            const rightLayer = laLayerCache.get(rightKey);
+            
+            if (leftLayer) {
+              leftLayer.visible = true;
+              updatedCount++;
+              console.log(`[LA Visibility] ✓ Showing left: ${leftKey}`);
+            } else {
+              console.warn(`[LA Visibility] ⚠ Left layer not found: ${leftKey}`);
+            }
+            
+            if (rightLayer && rightKey !== leftKey) {
+              rightLayer.visible = true;
+              updatedCount++;
+              console.log(`[LA Visibility] ✓ Showing right: ${rightKey}`);
+            }
+          }
+          
+          const duration = performance.now() - startTime;
+          console.log(`[LA Visibility] Updated ${updatedCount} layers in ${duration.toFixed(2)}ms`);
+        },
         setLaLayersVisibility: (visible) => { /* No-op */ },
 
         /**

@@ -1,14 +1,13 @@
 import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';
-import { 
-  KPI_LABELS,
-  KPIKey, 
-  KPI_THRESHOLDS, 
-  RENDERER_CONFIG, 
+import {
+  RENDERER_CONFIG,
   CONFIG,
-  getKPIFieldName,
-  getConditionClass 
+  getKPIFieldName
 } from '@/config/appConfig';
+import {
+  KPIKey, KPI_THRESHOLDS
+} from '@/config/kpiConfig';
 import { getCSSCustomProperty, hexToRgb } from '@/utils/themeHelpers';
 
 /**

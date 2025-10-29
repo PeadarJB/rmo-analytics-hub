@@ -1,15 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { Layout, Typography, Switch, Segmented, theme } from 'antd';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
+import { Layout, Typography, Switch, Segmented, theme, Spin, Card } from 'antd';
 import useAppStore from '@/store/useAppStore';
 import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
 import EnhancedFilterPanel from '@/components/EnhancedFilterPanel';
 import EnhancedStatsPanel from '@/components/EnhancedStatsPanel';
-import EnhancedChartPanel from '@/components/EnhancedChartPanel';
 import LALayerControl from '@/components/LALayerControl';
-import ConditionSummaryPage from '@/pages/ConditionSummaryPage';
-import { CONFIG, KPI_LABELS, type KPIKey } from '@/config/appConfig';
+import { CONFIG } from '@/config/appConfig';
+import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
+
+// ✅ Lazy load heavy components
+const EnhancedChartPanel = lazy(() => import('@/components/EnhancedChartPanel'));
+const ConditionSummaryPage = lazy(() => import('@/pages/ConditionSummaryPage'));
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -24,9 +27,18 @@ const App: React.FC = () => {
     currentPage, setCurrentPage,
   } = useAppStore();
   const [siderHovered, setSiderHovered] = useState(false);
+  const [isHoveringChart, setIsHoveringChart] = useState(false);
 
   const { styles } = usePanelStyles();
   const { token } = theme.useToken();
+
+  // Preload chart component when hovering over toggle
+  useEffect(() => {
+    if (isHoveringChart) {
+      // This dynamic import tells the bundler to pre-fetch the code for the component.
+      import('@/components/EnhancedChartPanel');
+    }
+  }, [isHoveringChart]);
 
   // Guarded map init: only for Overview page, and only if container has no children
   useEffect(() => {
@@ -59,12 +71,14 @@ const App: React.FC = () => {
         checkedChildren="Stats" 
         unCheckedChildren="Stats"
       />
-      <Switch 
-        checked={showChart} 
-        onChange={setShowChart} 
-        checkedChildren="Chart" 
-        unCheckedChildren="Chart"
-      />
+      <div onMouseEnter={() => setIsHoveringChart(true)}>
+        <Switch 
+          checked={showChart} 
+          onChange={setShowChart} 
+          checkedChildren="Chart" 
+          unCheckedChildren="Chart"
+        />
+      </div>
       <Switch
         checked={themeMode === 'dark'}
         onChange={(isDark) => {
@@ -86,7 +100,16 @@ const App: React.FC = () => {
       {(showFilters && showChart) ? (
         <div className={styles.panelContainer}>
           <EnhancedFilterPanel />
-          <EnhancedChartPanel />
+          <Suspense fallback={
+            <Card size="small">
+              <div style={{ textAlign: 'center', padding: '20px' }}>
+                <Spin size="large" />
+                <div style={{ marginTop: '12px' }}>Loading chart...</div>
+              </div>
+            </Card>
+          }>
+            <EnhancedChartPanel />
+          </Suspense>
         </div>
       ) : (
         <>
@@ -97,7 +120,16 @@ const App: React.FC = () => {
           )}
           {showChart && (
             <div className={styles.chartPanel}>
-              <EnhancedChartPanel />
+              <Suspense fallback={
+                <Card size="small">
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Spin size="large" />
+                    <div style={{ marginTop: '12px' }}>Loading chart...</div>
+                  </div>
+                </Card>
+              }>
+                <EnhancedChartPanel />
+              </Suspense>
             </div>
           )}
         </>
@@ -244,7 +276,9 @@ const App: React.FC = () => {
           </>
         ) : (
           // ConditionSummaryPage renders its own Header + Content
-          <ConditionSummaryPage />
+          <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><Spin size="large" /></div>}>
+            <ConditionSummaryPage />
+          </Suspense>
         )}
       </Layout>
     </Layout>

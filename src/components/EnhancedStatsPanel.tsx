@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Statistic, Row, Col, Divider, Tag, Space, Segmented, Spin, Alert, theme } from 'antd';
 import useAppStore from '@/store/useAppStore';
-import { CONFIG, KPI_LABELS } from '@/config/appConfig';
+import { KPI_LABELS } from '@/config/kpiConfig';
 
 const EnhancedStatsPanel: React.FC = () => {
   const { 

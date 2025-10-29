@@ -1,4 +1,4 @@
-import type { KPIKey } from "@/config/appConfig";
+import type { KPIKey } from "@/config/kpiConfig";
 
 export interface FilterState {
   localAuthority: string[];

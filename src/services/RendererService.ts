@@ -73,15 +73,12 @@ export default class RendererService {
     themeMode: 'light' | 'dark',
     useClassField: boolean = true
   ): ClassBreaksRenderer {
-    // ✅ FIX: Check cache first - this is the key performance optimization
     const cached = this.getCachedRenderer(kpi, year, themeMode);
     if (cached) {
-      console.log(`⚡ Using cached renderer for ${kpi}/${year}/${themeMode}`);
-      // ✅ CRITICAL: Clone the renderer to avoid shared state issues
-      // Without cloning, multiple layers would share the same renderer object
+      console.log(`✓ Using cached renderer`);
       return cached.clone();
     }
-    
+
     // Cache miss - create new renderer
     console.log(`🔨 Creating new renderer for ${kpi}/${year}/${themeMode}`);
     const startTime = performance.now();
@@ -260,15 +257,6 @@ export default class RendererService {
   }
 
   /**
-   * @deprecated Use createRenderer instead.
-   * Legacy method maintained for backward compatibility
-   */
-  static createKPIRenderer(kpi: KPIKey, year: number, themeMode: 'light' | 'dark'): ClassBreaksRenderer {
-    console.warn('createKPIRenderer is deprecated. Use createRenderer instead.');
-    return this.createRenderer(kpi, year, themeMode, false); // Use raw values for legacy calls
-  }
-
-  /**
    * Preload renderers for common KPI/year combinations
    * This improves initial load performance by caching renderers upfront
    */
@@ -401,137 +389,5 @@ export default class RendererService {
     console.log('Breakdown by Theme:', stats.breakdown.byTheme);
     console.log('\nCached Keys:', stats.keys);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  }
-
-  /**
-   * Add standard class breaks (lower values = better condition)
-   * Used for IRI, RUT, and LPV3
-   * @deprecated - Used only in legacy createKPIRenderer
-   */
-  private static addStandardBreaks(
-    renderer: ClassBreaksRenderer, 
-    kpi: KPIKey,
-    thresholds: typeof KPI_THRESHOLDS[KPIKey],
-    use5Classes: boolean = false,
-    colors: any
-  ): void {
-    const lineWidth = RENDERER_CONFIG.lineWidth;
-    
-    if (use5Classes && thresholds.veryGood !== undefined && thresholds.poor !== undefined) {
-      // 5-class system with Very Good through Very Poor
-      this.addClassBreak(renderer, 0, thresholds.veryGood, colors.veryGood, lineWidth, 
-        `Very Good (< ${thresholds.veryGood})`);
-      
-      this.addClassBreak(renderer, thresholds.veryGood, thresholds.good, colors.good, lineWidth,
-        `Good (${thresholds.veryGood}-${thresholds.good})`);
-      
-      this.addClassBreak(renderer, thresholds.good, thresholds.fair, colors.fair, lineWidth,
-        `Fair (${thresholds.good}-${thresholds.fair})`);
-      
-      this.addClassBreak(renderer, thresholds.fair, thresholds.poor, colors.poor, lineWidth,
-        `Poor (${thresholds.fair}-${thresholds.poor})`);
-      
-      this.addClassBreak(renderer, thresholds.poor, 9999, colors.veryPoor, lineWidth,
-        `Very Poor (> ${thresholds.poor})`);
-    } else {
-      // 3-class system: Good, Fair, Poor
-      this.addClassBreak(renderer, 0, thresholds.good, colors.good, lineWidth,
-        `Good (< ${thresholds.good})`);
-      
-      this.addClassBreak(renderer, thresholds.good, thresholds.fair, colors.fair, lineWidth,
-        `Fair (${thresholds.good}-${thresholds.fair})`);
-      
-      this.addClassBreak(renderer, thresholds.fair, 9999, colors.poor, lineWidth,
-        `Poor (> ${thresholds.fair})`);
-    }
-  }
-
-  /**
-   * Add inverted class breaks (higher values = better condition)
-   * Used for CSC
-   * @deprecated - Used only in legacy createKPIRenderer
-   */
-  private static addInvertedBreaks(
-    renderer: ClassBreaksRenderer,
-    kpi: KPIKey,
-    thresholds: typeof KPI_THRESHOLDS[KPIKey],
-    use5Classes: boolean = false,
-    colors: any
-  ): void {
-    const lineWidth = RENDERER_CONFIG.lineWidth;
-    
-    if (use5Classes && thresholds.veryPoor !== undefined && thresholds.good !== undefined) {
-      // 5-class system (inverted)
-      this.addClassBreak(renderer, thresholds.good, 999, colors.veryGood, lineWidth,
-        `Very Good (> ${thresholds.good})`);
-      
-      this.addClassBreak(renderer, thresholds.fair, thresholds.good, colors.good, lineWidth,
-        `Good (${thresholds.fair}-${thresholds.good})`);
-      
-      this.addClassBreak(renderer, thresholds.poor!, thresholds.fair, colors.fair, lineWidth,
-        `Fair (${thresholds.poor}-${thresholds.fair})`);
-      
-      this.addClassBreak(renderer, thresholds.veryPoor, thresholds.poor!, colors.poor, lineWidth,
-        `Poor (${thresholds.veryPoor}-${thresholds.poor})`);
-      
-      this.addClassBreak(renderer, 0, thresholds.veryPoor, colors.veryPoor, lineWidth,
-        `Very Poor (< ${thresholds.veryPoor})`);
-    } else {
-      // 3-class system (inverted)
-      this.addClassBreak(renderer, thresholds.fair, 999, colors.good, lineWidth,
-        `Good (> ${thresholds.fair})`);
-      
-      this.addClassBreak(renderer, thresholds.poor!, thresholds.fair, colors.fair, lineWidth,
-        `Fair (${thresholds.poor}-${thresholds.fair})`);
-      
-      this.addClassBreak(renderer, 0, thresholds.poor!, colors.poor, lineWidth,
-        `Poor (< ${thresholds.poor})`);
-    }
-  }
-
-  /**
-   * Add PSCI-specific breaks (4 classes)
-   * @deprecated - Used only in legacy createKPIRenderer
-   */
-  private static addPSCIBreaks(
-    renderer: ClassBreaksRenderer,
-    use5Classes: boolean = false,
-    colors: any
-  ): void {
-    const lineWidth = RENDERER_CONFIG.lineWidth;
-    
-    if (use5Classes) {
-      // 4-class system for PSCI
-      this.addClassBreak(renderer, 9, 10, colors.veryGood, lineWidth, 'Very Good (9-10)');
-      this.addClassBreak(renderer, 7, 9, colors.good, lineWidth, 'Good (7-8)');
-      this.addClassBreak(renderer, 5, 7, colors.fair, lineWidth, 'Fair (5-6)');
-      this.addClassBreak(renderer, 1, 5, colors.poor, lineWidth, 'Poor (1-4)');
-    } else {
-      // 3-class system
-      this.addClassBreak(renderer, 7, 10, colors.good, lineWidth, 'Good (7-10)');
-      this.addClassBreak(renderer, 5, 7, colors.fair, lineWidth, 'Fair (5-6)');
-      this.addClassBreak(renderer, 1, 5, colors.poor, lineWidth, 'Poor (1-4)');
-    }
-  }
-
-  /**
-   * Add MPD-specific breaks (3 classes only)
-   * @deprecated - Used only in legacy createKPIRenderer
-   */
-  private static addMPDBreaks(
-    renderer: ClassBreaksRenderer,
-    colors: any
-  ): void {
-    const lineWidth = RENDERER_CONFIG.lineWidth;
-    const thresholds = KPI_THRESHOLDS['mpd'];
-    
-    this.addClassBreak(renderer, thresholds.good, 999, colors.veryGood, lineWidth,
-      `Good (≥ ${thresholds.good})`);
-    
-    this.addClassBreak(renderer, thresholds.poor!, thresholds.good, colors.fair, lineWidth,
-      `Fair (${thresholds.poor}-${thresholds.good})`);
-    
-    this.addClassBreak(renderer, 0, thresholds.poor!, colors.poor, lineWidth,
-      `Poor (< ${thresholds.poor})`);
   }
 }

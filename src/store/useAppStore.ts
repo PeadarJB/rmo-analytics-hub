@@ -694,7 +694,6 @@ const useAppStore = create<AppState>()(
               try {
                 // Apply to main road layer
                 (roadLayer as any).renderer = renderer;
-                roadLayer.refresh();
                 
                 // Apply to swipe layer if exists
                 if (state.roadLayerSwipe) {

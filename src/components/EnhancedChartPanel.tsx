@@ -16,7 +16,50 @@ const groupByOptions = [
   { label: 'Subgroup', value: 'subgroup' } 
 ];
 
-const EnhancedChartPanel: React.FC = () => {
+const buildSubgroupWhereClause = (subgroup: string): string => {
+  const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => 
+    opt.label === subgroup
+  );
+  
+  if (subgroupOption) {
+    // This logic is based on how subgroups are defined in the data
+    const fieldName = CONFIG.filters.subgroup.options.find(o => o.code === subgroupOption.code)?.value;
+    if (fieldName) {
+      return `${fieldName} = 1`;
+    }
+  }
+  // Fallback for 'Rural' or if not found
+  if (subgroup === 'Rural') {
+    const definedSubgroups = CONFIG.filters.subgroup.options
+      .filter(o => o.value !== 'Rural')
+      .map(o => `${o.value} = 0`)
+      .join(' AND ');
+    return `(${definedSubgroups})`;
+  }
+  return '1=1';
+};
+
+const buildConditionWhereClause = (
+  kpiField: string,
+  kpi: KPIKey,
+  conditionClass: string
+): string => {
+  const classValue = {
+    'veryGood': 1,
+    'good': 2,
+    'fair': 3,
+    'poor': 4,
+    'veryPoor': 5
+  }[conditionClass];
+
+  if (classValue) {
+    const classFieldName = getKPIFieldName(kpi, 2025, true).replace('_2025', ''); // Get base class field name
+    return `${classFieldName} = ${classValue}`;
+  }
+  return '1=1';
+};
+
+const EnhancedChartPanel: React.FC = React.memo(() => {
   const { 
     roadLayer, 
     activeKpi, 
@@ -258,89 +301,6 @@ const EnhancedChartPanel: React.FC = () => {
     }
   }, [roadLayer, mapView, groupBy, previousDefinitionExpression]);
 
-  const buildSubgroupWhereClause = (subgroup: string): string => {
-    const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => 
-      opt.label === subgroup
-    );
-    
-    if (subgroupOption) {
-      if (subgroupOption.value === 'Rural') {
-        return '(Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)';
-      } else {
-        return `${subgroupOption.value} = 1`;
-      }
-    }
-    return '1=1';
-  };
-
-  const buildConditionWhereClause = (
-    kpiField: string,
-    kpi: KPIKey,
-    conditionClass: string
-  ): string => {
-    const thresholds = KPI_THRESHOLDS[kpi];
-    
-    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
-      switch(conditionClass) {
-        case 'veryGood': 
-          return thresholds.veryGood ? `${kpiField} < ${thresholds.veryGood}` : `${kpiField} < ${thresholds.good}`;
-        case 'good': 
-          return thresholds.veryGood 
-            ? `${kpiField} >= ${thresholds.veryGood} AND ${kpiField} < ${thresholds.good}`
-            : `${kpiField} >= ${thresholds.good} AND ${kpiField} < ${thresholds.fair}`;
-        case 'fair': 
-          return `${kpiField} >= ${thresholds.good} AND ${kpiField} < ${thresholds.fair}`;
-        case 'poor': 
-          return thresholds.poor 
-            ? `${kpiField} >= ${thresholds.fair} AND ${kpiField} < ${thresholds.poor}`
-            : `${kpiField} >= ${thresholds.fair}`;
-        case 'veryPoor': 
-          return thresholds.poor ? `${kpiField} >= ${thresholds.poor}` : `${kpiField} >= ${thresholds.fair}`;
-        default: 
-          return '1=1';
-      }
-    } else if (kpi === 'csc') {
-      switch(conditionClass) {
-        case 'veryGood': 
-          return `${kpiField} > ${thresholds.good}`;
-        case 'good': 
-          return `${kpiField} > ${thresholds.fair} AND ${kpiField} <= ${thresholds.good}`;
-        case 'fair': 
-          return `${kpiField} > ${thresholds.poor!} AND ${kpiField} <= ${thresholds.fair}`;
-        case 'poor': 
-          return `${kpiField} > ${thresholds.veryPoor!} AND ${kpiField} <= ${thresholds.poor!}`;
-        case 'veryPoor': 
-          return `${kpiField} <= ${thresholds.veryPoor!}`;
-        default: 
-          return '1=1';
-      }
-    } else if (kpi === 'psci') {
-      switch(conditionClass) {
-        case 'veryGood': return `${kpiField} > 8`;
-        case 'good': return `${kpiField} > 6 AND ${kpiField} <= 8`;
-        case 'fair': return `${kpiField} > 4 AND ${kpiField} <= 6`;
-        case 'poor': return `${kpiField} > 2 AND ${kpiField} <= 4`;
-        case 'veryPoor': return `${kpiField} <= 2`;
-        default: return '1=1';
-      }
-    } else if (kpi === 'mpd') {
-      switch(conditionClass) {
-        case 'veryGood': 
-        case 'good': 
-          return `${kpiField} >= ${thresholds.good}`;
-        case 'fair': 
-          return `${kpiField} >= ${thresholds.poor} AND ${kpiField} < ${thresholds.good}`;
-        case 'poor': 
-        case 'veryPoor': 
-          return `${kpiField} < ${thresholds.poor}`;
-        default: 
-          return '1=1';
-      }
-    }
-    
-    return '1=1';
-  };
-
   useEffect(() => {
     if (roadLayer) {
       previousDefinitionExpression.current = (roadLayer as any).definitionExpression || '1=1';
@@ -349,7 +309,7 @@ const EnhancedChartPanel: React.FC = () => {
   }, [currentFilters]);
 
   // Helper function to create chart colors with theme awareness
-  const createChartColors = (conditionType: keyof typeof themeColors, groupData: GroupedConditionStats[]) => {
+  const createChartColors = useCallback((conditionType: keyof typeof themeColors, groupData: GroupedConditionStats[]) => {
     const baseColor = themeColors[conditionType];
     
     return {
@@ -368,16 +328,13 @@ const EnhancedChartPanel: React.FC = () => {
         return highlightedBars.has(key) ? 3 : 1;
       })
     };
-  };
+  }, [themeColors, highlightedBars]);
 
-  // Render chart - now depends on themeMode to trigger re-render
-  useEffect(() => {
-    if (!chartRef.current || dataStatus !== 'success' || !groupedData.length) return;
-
+  const chartDatasets = useMemo(() => {
+    if (dataStatus !== 'success' || !groupedData.length) return [];
+    
     const labels = groupedData.map(d => d.group);
-    
     let datasets: any[];
-    
     if (stackedMode) {
       datasets = [
         {
@@ -423,12 +380,16 @@ const EnhancedChartPanel: React.FC = () => {
         console.warn('[Chart Debug] All chart values are zero or null!');
       }
     }
+    return datasets;
+  }, [groupedData, dataStatus, stackedMode, activeKpi, token, createChartColors]);
 
+  const chartConfig = useMemo(() => {
+    const labels = groupedData.map(d => d.group);
     const chartThemeColors = getChartThemeColors();
 
     const config: ChartConfiguration = {
       type: 'bar',
-      data: { labels, datasets },
+      data: { labels, datasets: chartDatasets },
       options: {
         indexAxis: 'y',
         responsive: true,
@@ -516,11 +477,17 @@ const EnhancedChartPanel: React.FC = () => {
       }
     };
 
+    return config;
+  }, [groupedData, chartDatasets, activeKpi, groupBy, stackedMode, selectedSegment, handleChartClick, token]);
+
+  // Render chart - now depends on themeMode to trigger re-render
+  useEffect(() => {
+    if (!chartRef.current || dataStatus !== 'success' || !groupedData.length) return;
+
     if (chartInstance.current) {
       chartInstance.current.destroy();
     }
-
-    chartInstance.current = new Chart(chartRef.current, config);
+    chartInstance.current = new Chart(chartRef.current, chartConfig);
 
     return () => {
       if (chartInstance.current) {
@@ -528,7 +495,7 @@ const EnhancedChartPanel: React.FC = () => {
         chartInstance.current = null;
       }
     };
-  }, [groupedData, activeKpi, groupBy, dataStatus, token, stackedMode, selectedSegment, highlightedBars, chartSelections, handleChartClick, themeColors, themeMode]);
+  }, [dataStatus, groupedData, chartConfig]);
 
   return (
     <Card 
@@ -631,6 +598,6 @@ const EnhancedChartPanel: React.FC = () => {
       )}
     </Card>
   );
-};
+});
 
 export default EnhancedChartPanel;

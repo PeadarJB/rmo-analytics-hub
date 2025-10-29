@@ -516,11 +516,11 @@ const useAppStore = create<AppState>()(
               get().updateRenderer();
             }
 
-            // [SPRINT 1 / TASK-003]
-            // Preload all other renderers in the background (fire and forget)
+            // Preload all other renderers in the background during idle time
             // to make subsequent KPI/year changes instantaneous.
-            RendererService.preloadAllRenderers(get().themeMode)
-              .catch(err => console.warn("Background renderer preloading failed:", err));
+            RendererService.preloadAllRenderers(get().themeMode).catch(err =>
+              console.warn('Background renderer preloading failed:', err)
+            );
 
             if (state.mapView) { // This destroys the *previous* view, which is correct
               state.mapView.destroy();

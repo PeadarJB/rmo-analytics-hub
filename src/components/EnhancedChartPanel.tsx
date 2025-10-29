@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Card, Select, Space, Spin, Alert, theme, Switch, message, Button, Tag } from 'antd';
 import { Chart, ChartConfiguration, ChartEvent, ActiveElement } from 'chart.js/auto';
+import { useDebouncedCallback } from '@/hooks/useDebounce';
 import useAppStore from '@/store/useAppStore';
 import { CONFIG, KPI_LABELS, RENDERER_CONFIG, KPI_THRESHOLDS, type KPIKey, getKPIFieldName } from '@/config/appConfig';
 import QueryService from '@/services/QueryService';
 import { getChartThemeColors } from '@/utils/themeHelpers';
 import StatisticsService from '@/services/StatisticsService';
-import type { GroupedConditionStats } from '@/types';
+import type { FilterState, GroupedConditionStats } from '@/types';
 import Query from '@arcgis/core/rest/support/Query';
 import type { SummaryStatistics } from '@/types';
 
@@ -110,115 +111,119 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
     }
   }, []);
 
-  // Fetch data with condition breakdowns
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+  // Memoized data fetching logic
+  const fetchData = useCallback(async (
+    layer: __esri.FeatureLayer, 
+    filters: FilterState, 
+    kpi: KPIKey, 
+    grpBy: string, 
+    isStacked: boolean
+  ) => {
+    setLoading(true);
+    setError(null);
+    setDataStatus('loading');
 
-      if (!roadLayer) {
+    try {
+      let data: GroupedConditionStats[];
+      
+      if (isStacked) {
+        data = await StatisticsService.computeGroupedStatisticsWithConditions(
+          layer,
+          filters,
+          kpi,
+          grpBy
+        );
+      } else {
+        let simpleData;
+        const kpiField = getKPIFieldName(kpi, filters.year || CONFIG.defaultYear);
+        const whereClause = (layer as any)?.definitionExpression || '1=1';
+
+        if (grpBy === 'subgroup') {
+          console.log('[Chart Debug] Fetching subgroup averages...');
+          simpleData = await QueryService.computeSubgroupStatistics(
+            layer,
+            kpiField,
+            whereClause
+          );
+        } else {
+          console.log('[Chart Debug] Fetching simple averages for:', {
+            activeKpi: kpi,
+            year: filters.year || CONFIG.defaultYear,
+            groupBy: grpBy,
+            definitionExpression: whereClause
+          });
+          simpleData = await QueryService.computeGroupedStatistics(
+            layer,
+            kpiField,
+            grpBy,
+            whereClause
+          );
+        }
+        
+        console.log('[Chart Debug] Raw QueryService result:', simpleData);
+        
+        data = simpleData.map(d => {
+          console.log('[Chart Debug] Processing group:', d.group, 'avgValue:', d.avgValue, 'count:', d.count);
+          const partialStats: Partial<SummaryStatistics> = {
+            avgValue: d.avgValue || 0,
+            totalSegments: d.count || 0,
+          };
+          return ({
+            group: d.group,
+            stats: partialStats as SummaryStatistics
+          });
+        });
+        
+        console.log('[Chart Debug] Final converted data:', data);
+      }
+      
+      if (!data || data.length === 0) {
         setDataStatus('no-data');
-        setErrorDetails('Road layer not available.');
+        setErrorDetails(`No ${groupByOptions.find(o => o.value === grpBy)?.label || grpBy} data available for ${KPI_LABELS[kpi]} in the current selection.`);
         setGroupedData([]);
-        setLoading(false);
         return;
       }
       
-      try {
-        setDataStatus('loading');
-        let data: GroupedConditionStats[];
-        
-        if (stackedMode) {
-          data = await StatisticsService.computeGroupedStatisticsWithConditions(
-            roadLayer,
-            currentFilters,
-            activeKpi,
-            groupBy
-          );
-        } else {
-          // MODIFICATION START: Add logic to handle subgroup correctly
-          let simpleData;
-          const kpiField = getKPIFieldName(activeKpi, currentFilters.year || CONFIG.defaultYear);
-          const whereClause = (roadLayer as any)?.definitionExpression || '1=1';
+      const hasValidValues = isStacked 
+        ? data.some(d => d.stats.totalSegments > 0)
+        : data.some(d => d.stats.avgValue && d.stats.avgValue > 0);
 
-          if (groupBy === 'subgroup') {
-            console.log('[Chart Debug] Fetching subgroup averages...');
-            simpleData = await QueryService.computeSubgroupStatistics(
-              roadLayer,
-              kpiField,
-              whereClause
-            );
-          } else {
-            console.log('[Chart Debug] Fetching simple averages for:', {
-              activeKpi,
-              year: currentFilters.year || CONFIG.defaultYear,
-              groupBy,
-              definitionExpression: whereClause
-            });
-            simpleData = await QueryService.computeGroupedStatistics(
-              roadLayer,
-              kpiField,
-              groupBy,
-              whereClause
-            );
-          }
-          // MODIFICATION END
-          
-          console.log('[Chart Debug] Raw QueryService result:', simpleData);
-          
-          data = simpleData.map(d => {
-            console.log('[Chart Debug] Processing group:', d.group, 'avgValue:', d.avgValue, 'count:', d.count);
-            // Create a partial SummaryStatistics object for the 'stats' property
-            const partialStats: Partial<SummaryStatistics> = {
-              avgValue: d.avgValue || 0,
-              totalSegments: d.count || 0,
-            };
-            return ({
-              group: d.group,
-              stats: partialStats as SummaryStatistics // Cast to satisfy the type
-            });
-          });
-          
-          console.log('[Chart Debug] Final converted data:', data);
-        }
-        
-        if (!data || data.length === 0) {
-          setDataStatus('no-data');
-          setErrorDetails(`No ${groupByOptions.find(o => o.value === groupBy)?.label || groupBy} data available for ${KPI_LABELS[activeKpi]} in the current selection.`);
-          setGroupedData([]);
-          return;
-        }
-        
-        const hasValidValues = stackedMode 
-          ? data.some(d => d.stats.totalSegments > 0)
-          : data.some(d => d.stats.avgValue && d.stats.avgValue > 0);
-
-        if (!stackedMode) {
-          // Sort by average value for non-stacked mode
-          data.sort((a, b) => (b.stats.avgValue || 0) - (a.stats.avgValue || 0));
-        }
-          
-        if (!hasValidValues) {
-          setDataStatus('no-data');
-          setErrorDetails(`All ${KPI_LABELS[activeKpi]} values are zero or unavailable for the current filters.`);
-        } else {
-          setDataStatus('success');
-          setErrorDetails('');
-        }
-        
-        setGroupedData(data);
-        
-      } catch (e: any) {
-        console.error('Error fetching chart data:', e);
-        setDataStatus('error');
-        setErrorDetails(e.message || 'Failed to load chart data');
-        setGroupedData([]);
-      } finally {
-        setLoading(false);
+      if (!isStacked) {
+        data.sort((a, b) => (b.stats.avgValue || 0) - (a.stats.avgValue || 0));
       }
-    };
+        
+      if (!hasValidValues) {
+        setDataStatus('no-data');
+        setErrorDetails(`All ${KPI_LABELS[kpi]} values are zero or unavailable for the current filters.`);
+      } else {
+        setDataStatus('success');
+        setErrorDetails('');
+      }
+      
+      setGroupedData(data);
+      
+    } catch (e: any) {
+      console.error('Error fetching chart data:', e);
+      setDataStatus('error');
+      setErrorDetails(e.message || 'Failed to load chart data');
+      setGroupedData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    fetchData();
+  // Create a debounced version of the data fetcher
+  const debouncedFetchData = useDebouncedCallback(fetchData, 300);
+
+  // Effect to trigger data fetching when dependencies change
+  useEffect(() => {
+    if (!roadLayer) {
+      setDataStatus('no-data');
+      setErrorDetails('Road layer not available.');
+      setGroupedData([]);
+      return;
+    }
+    debouncedFetchData(roadLayer, currentFilters, activeKpi, groupBy, stackedMode);
   }, [roadLayer, activeKpi, currentFilters, groupBy, stackedMode]);
 
   const handleChartClick = useCallback(async (event: ChartEvent, elements: ActiveElement[]) => {
@@ -607,5 +612,7 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
     </Card>
   );
 });
+
+EnhancedChartPanel.displayName = 'EnhancedChartPanel';
 
 export default EnhancedChartPanel;

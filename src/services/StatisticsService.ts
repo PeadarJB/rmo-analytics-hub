@@ -381,8 +381,10 @@ export default class StatisticsService {
     kpi: KPIKey
   ): Promise<SummaryStatistics> {
     if (!layer) {
-      throw new Error('Road layer not loaded - cannot calculate statistics');
+      console.error('[Statistics] Road layer not loaded - cannot calculate statistics');
+      return this.getEmptyStats(kpi, filters.year);
     }
+
     const year = filters.year || CONFIG.defaultYear;
     const classFieldName = getKPIFieldName(kpi, year, true);
     const hasClassField = layer.fields.some(field => field.name === classFieldName);
@@ -399,13 +401,16 @@ export default class StatisticsService {
   /**
    * Compute grouped statistics for charts (e.g., by Local Authority, Route, etc.)
    */
-  static async computeGroupedStatistics(
-    layer: __esri.FeatureLayer,
+  static async computeGroupedStatistics( // This method is no longer used by EnhancedChartPanel but is kept for completeness
+    layer: __esri.FeatureLayer | null,
     filters: FilterState,
     activeKpi: KPIKey,
     groupByField: string
   ): Promise<any[]> {
-    // No layer check needed, caller must ensure layer exists
+    if (!layer) {
+      console.error('[Statistics] Road layer not loaded - cannot calculate grouped statistics');
+      return [];
+    }
 
     try {
       const year = filters.year || CONFIG.defaultYear;
@@ -444,12 +449,15 @@ export default class StatisticsService {
    * UPDATED: Now includes avg/min/max in summary
    */
   static async computeGroupedStatisticsWithConditions(
-    layer: __esri.FeatureLayer,
+    layer: __esri.FeatureLayer | null,
     filters: FilterState,
     activeKpi: KPIKey,
     groupByField: string
   ): Promise<GroupedConditionStats[]> {
-    // No layer check needed, caller must ensure layer exists
+    if (!layer) {
+      console.error('[Statistics] Road layer not loaded - cannot calculate grouped condition statistics');
+      return [];
+    }
 
     try {
       const year = filters.year || CONFIG.defaultYear;
@@ -582,12 +590,16 @@ export default class StatisticsService {
   }
 
   /**
-   * Empty stats in case of errors
+   * Returns empty statistics structure for error cases.
+   * Used when calculation fails or no data is available.
    */
-  private static getEmptyStats(activeKpi: KPIKey): SummaryStatistics {
+  private static getEmptyStats(
+    activeKpi: KPIKey,
+    year: number = CONFIG.defaultYear
+  ): SummaryStatistics {
     return {
       kpi: activeKpi.toUpperCase(),
-      year: CONFIG.defaultYear,
+      year,
       totalSegments: 0,
       totalLengthKm: 0,
       veryGoodCount: 0,
@@ -601,7 +613,6 @@ export default class StatisticsService {
       poorPct: 0,
       veryPoorPct: 0,
       fairOrBetterPct: 0,
-      // ADDED
       avgValue: 0,
       minValue: 0,
       maxValue: 0,
@@ -619,7 +630,7 @@ export default class StatisticsService {
     baseFilters: FilterState
   ): Promise<SummaryStatistics> {
     if (!layer || chartSelections.length === 0) {
-      return this.getEmptyStats('iri'); // Default empty stats
+      return this.getEmptyStats('iri', baseFilters.year); // Default empty stats
     }
 
     console.log('[Chart Stats] Computing for selections:', chartSelections);
@@ -666,7 +677,7 @@ export default class StatisticsService {
 
     } catch (error) {
       console.error('Error computing chart-filtered statistics:', error);
-      return this.getEmptyStats(chartSelections[0]?.kpi || 'iri');
+      return this.getEmptyStats(chartSelections[0]?.kpi || 'iri', baseFilters.year);
     }
   }
 
@@ -832,7 +843,7 @@ export default class StatisticsService {
     chartSelections: ChartSelection[]
   ): SummaryStatistics {
     if (results.length === 0) {
-      return this.getEmptyStats(chartSelections[0]?.kpi || 'iri');
+      return this.getEmptyStats(chartSelections[0]?.kpi || 'iri', chartSelections[0]?.year);
     }
 
     // For simplicity, use the most common KPI from selections

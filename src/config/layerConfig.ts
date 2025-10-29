@@ -143,16 +143,6 @@ export const SUBGROUP_FIELD_TO_CODE: Record<string, number> = {
   'Rural': 50
 };
 
-/**
- * Legacy field name mapping (for backward compatibility with old data)
- * Maps old "Roads_Joined_" prefixed field names to new simplified names
- */
-export const LEGACY_SUBGROUP_FIELDS: Record<string, string> = {
-  'Roads_Joined_IsFormerNa': 'IsFormerNa',
-  'Roads_Joined_IsDublin': 'IsDublin',
-  'Roads_Joined_IsCityTown': 'IsCityTown',
-  'Roads_Joined_IsPeat': 'IsPeat'
-};
 
 /**
  * Subgroup Options Configuration

@@ -1,6 +1,6 @@
 // src/config/kpiConfig.ts
 
-import { RENDERER_CONFIG } from './rendererConfig';
+import { RENDERER_CONFIG } from '../config/rendererConfig';
 
 export type KPIKey = 'iri' | 'rut' | 'psci' | 'csc' | 'mpd' | 'lpv3';
 

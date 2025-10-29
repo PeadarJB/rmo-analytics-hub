@@ -35,10 +35,25 @@ import RendererService from '@/services/RendererService';
 // Config
 import { LA_LAYER_CONFIG } from '@/config/layerConfig';
 import { SURVEY_YEARS } from '@/config/constants';
-import type { KPICode } from '@/config/kpiConfig';
 
-// Types
-import type { LAMetricType } from '@/types';
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/**
+ * KPI codes for condition metrics
+ */
+export type KPICode = 'IRI' | 'RUT' | 'PSCI' | 'CSC' | 'MPD' | 'LPV';
+
+/**
+ * LA metric type for rendering
+ */
+export type LAMetricType = 'average' | 'fairOrBetter';
+
+/**
+ * Current page type
+ */
+export type CurrentPage = 'overview' | 'condition-summary';
 
 // ============================================================================
 // STATE INTERFACE
@@ -113,15 +128,6 @@ export interface MapSlice {
    * Includes multiple guards to prevent duplicate initialization.
    * 
    * @param containerId - DOM element ID to attach the map view
-   * 
-   * @example
-   * ```typescript
-   * const { initializeMap } = useAppStore();
-   * 
-   * useEffect(() => {
-   *   initializeMap('map-container');
-   * }, []);
-   * ```
    */
   initializeMap: (containerId: string) => Promise<void>;
   
@@ -138,90 +144,57 @@ export interface MapSlice {
   
   /**
    * Sets the single LA polygon layer reference.
-   * Called during map initialization.
-   * 
-   * @param layer - FeatureLayer instance or null
    */
   setLALayer: (layer: FeatureLayer | null) => void;
   
   /**
    * Updates LA polygon layer visibility using cached layer references.
    * O(1) lookup performance vs O(n) layer searching.
-   * 
-   * Called when:
-   * - KPI changes
-   * - Year changes (left or right swipe year)
-   * - Page changes (overview <-> condition-summary)
-   * 
-   * @example
-   * ```typescript
-   * // After changing KPI
-   * setActiveKpi('RUT');
-   * updateLALayerVisibility(); // Shows RUT layers for current years
-   * ```
    */
   updateLALayerVisibility: () => void;
   
   /**
    * Toggle LA layer visibility (show/hide all LA layers).
-   * 
-   * @param visible - Whether to show or hide all LA layers
    */
   setLaLayersVisibility: (visible: boolean) => void;
   
   /**
    * Toggle single LA layer visibility (new architecture).
-   * 
-   * @param visible - Whether to show or hide the LA layer
    */
   setLALayerVisible: (visible: boolean) => void;
   
   /**
    * Change LA layer metric type (average vs fairOrBetter).
-   * Triggers renderer update.
-   * 
-   * @param metricType - "average" or "fairOrBetter"
-   * 
-   * @example
-   * ```typescript
-   * // Show "Fair or Better" percentages instead of averages
-   * setLAMetricType('fairOrBetter');
-   * ```
    */
   setLAMetricType: (metricType: LAMetricType) => void;
   
   /**
    * Updates the LA layer renderer based on current KPI, year, and metric type.
-   * Called automatically when these values change.
    */
   updateLALayerRenderer: () => void;
   
   /**
    * Sets road network layer visibility.
-   * 
-   * @param visible - Whether to show or hide the road layer
    */
   setRoadLayerVisibility: (visible: boolean) => void;
   
   /**
    * Hides the road network layer for swipe mode.
-   * Stores the current definition expression for later restoration.
    */
   hideRoadNetworkForSwipe: () => void;
   
   /**
    * Restores the road network layer visibility after swipe mode.
-   * Reapplies the stored definition expression.
    */
   restoreRoadNetworkVisibility: () => void;
   
   /**
-   * Enters swipe mode by hiding the main road layer and storing its filter.
+   * Enters swipe mode by hiding the main road layer.
    */
   enterSwipeMode: () => void;
   
   /**
-   * Exits swipe mode by restoring the main road layer and its filter.
+   * Exits swipe mode by restoring the main road layer.
    */
   exitSwipeMode: () => void;
 }
@@ -234,12 +207,7 @@ export interface MapSlice {
  * Creates the map slice with all state and actions.
  * Uses Zustand's StateCreator type for proper typing.
  */
-export const createMapSlice: StateCreator
-  MapSlice,
-  [],
-  [],
-  MapSlice
-> = (set, get) => ({
+export const createMapSlice: StateCreator<MapSlice> = (set, get) => ({
   
   // ============================================================================
   // INITIAL STATE
@@ -284,7 +252,7 @@ export const createMapSlice: StateCreator
         (state.mapView as any).container = container;
       }
       
-      return; // Early return - map already exists
+      return;
     }
     
     // ========================================================================
@@ -323,8 +291,8 @@ export const createMapSlice: StateCreator
       // ========================================================================
       console.log('[Map] Initializing new map view...');
       
-      // Get webMapId from config (you'll need to import this)
-      const webMapId = '4e3d7e6f8c0a4f6a8e9d5c7b2a1f3e8d'; // Replace with actual config value
+      // Get webMapId from config
+      const webMapId = '4e3d7e6f8c0a4f6a8e9d5c7b2a1f3e8d'; // TODO: Import from config
       const { view, webmap } = await MapViewService.initializeMapView(
         containerId,
         webMapId
@@ -339,9 +307,7 @@ export const createMapSlice: StateCreator
       webmap.layers.forEach(layer => {
         const layerTitle = layer.title;
         
-        // Only proceed if the layer has a title
         if (layerTitle) {
-          // Check if this is an LA polygon layer
           // Pattern: "Average [KPI] [YEAR]"
           const laPattern = /^Average\s+(IRI|RUT|PSCI|CSC|MPD|LPV)\s+(2011|2018|2025)$/i;
           const match = layerTitle.match(laPattern);
@@ -350,8 +316,7 @@ export const createMapSlice: StateCreator
             const kpi = match[1].toLowerCase();
             const year = parseInt(match[2]);
             
-            // Store with consistent key format
-            const cacheKey = `${kpi}_${year}_average`; // e.g., "iri_2025_average"
+            const cacheKey = `${kpi}_${year}_average`;
             laCache.set(cacheKey, layer as FeatureLayer);
             laPolygons.set(layerTitle, layer as FeatureLayer);
             
@@ -362,16 +327,14 @@ export const createMapSlice: StateCreator
       
       console.log(`[LA Cache] Built cache with ${laCache.size} layers`);
       
-      // ========================================================================
-      // Store Reference on Container (for guard checks)
-      // ========================================================================
+      // Store reference on container
       (container as any).__esri_mapview = view;
       
       // ========================================================================
       // Find Road Network Layers
       // ========================================================================
-      const roadLayerTitle = 'Regional Road Network 100m segments'; // From config
-      const roadSwipeLayerTitle = 'Regional Road Network 100m segments - Swipe'; // From config
+      const roadLayerTitle = 'Regional Road Network 100m segments';
+      const roadSwipeLayerTitle = 'Regional Road Network 100m segments - Swipe';
       
       const road = webmap.allLayers.find(
         (l: any) => l.title === roadLayerTitle
@@ -386,19 +349,17 @@ export const createMapSlice: StateCreator
       }
       
       // ========================================================================
-      // Find Single LA Polygon Layer (New Architecture)
+      // Find Single LA Polygon Layer
       // ========================================================================
-      const laLayerTitle = LA_LAYER_CONFIG.layerTitle; // From config
+      const laLayerTitle = 'RMO LA data'; // From LA_LAYER_CONFIG
       const laLayer = webmap.allLayers.find(
         (l: any) => l.title === laLayerTitle
       ) as FeatureLayer | undefined;
       
       if (laLayer) {
         console.log('✓ Found LA polygon layer:', laLayer.title);
-        await laLayer.load(); // Load to access fields
-        laLayer.visible = false; // Hidden by default
-        
-        // Set opacity and z-order
+        await laLayer.load();
+        laLayer.visible = false;
         laLayer.opacity = 0.7;
         
         // Move LA layer below road network
@@ -430,17 +391,14 @@ export const createMapSlice: StateCreator
       // ========================================================================
       // Background Tasks
       // ========================================================================
-      
-      // Preload all renderers in the background during idle time
-      // to make subsequent KPI/year changes instantaneous
       if (road) {
-        const themeMode = 'light'; // Get from theme slice later
+        const themeMode = 'light';
         RendererService.preloadAllRenderers(themeMode).catch(err =>
           console.warn('[Map] Background renderer preloading failed:', err)
         );
       }
       
-      // Clean up previous view if it exists
+      // Clean up previous view
       if (state.mapView && state.mapView !== view) {
         state.mapView.destroy();
       }
@@ -477,11 +435,8 @@ export const createMapSlice: StateCreator
    * Updates LA polygon layer visibility using cached layer references
    */
   updateLALayerVisibility: () => {
-    const {
-      laLayerCache,
-    } = get();
+    const { laLayerCache } = get();
     
-    // Fast exit if cache not built yet
     if (laLayerCache.size === 0) {
       console.warn('[LA Visibility] Layer cache not initialized yet');
       return;
@@ -489,22 +444,20 @@ export const createMapSlice: StateCreator
     
     const startTime = performance.now();
     
-    // Get current state from other slices (will be passed in when combined)
-    // For now, use placeholder values - these will come from filter/ui slices
-    const activeKpi: KPICode = 'IRI'; // From filter slice
-    const leftSwipeYear = 2018; // From ui slice
-    const rightSwipeYear = 2025; // From ui slice
-    const currentPage: 'overview' | 'condition-summary' = 'overview'; // From ui slice
+    // TODO: Get these from other slices when combined
+    const activeKpi: KPICode = 'IRI';
+    const leftSwipeYear = 2018;
+    const rightSwipeYear = 2025;
+    const currentPage: CurrentPage = 'overview';
     
     const shouldShow = currentPage === 'condition-summary';
     
-    // Build keys for layers that should be visible
     const leftKey = `${activeKpi.toLowerCase()}_${leftSwipeYear}_average`;
     const rightKey = `${activeKpi.toLowerCase()}_${rightSwipeYear}_average`;
     
     let updatedCount = 0;
     
-    // Hide all LA layers first (fast iteration over cached layers only)
+    // Hide all LA layers
     for (const [key, layer] of laLayerCache.entries()) {
       if (layer.visible) {
         layer.visible = false;
@@ -512,7 +465,7 @@ export const createMapSlice: StateCreator
       }
     }
     
-    // Show only the relevant layers
+    // Show relevant layers
     if (shouldShow) {
       const leftLayer = laLayerCache.get(leftKey);
       const rightLayer = laLayerCache.get(rightKey);
@@ -568,8 +521,6 @@ export const createMapSlice: StateCreator
    */
   setLAMetricType: (metricType: LAMetricType) => {
     set({ laMetricType: metricType });
-    
-    // Update renderer when metric type changes
     get().updateLALayerRenderer();
   },
   
@@ -584,15 +535,17 @@ export const createMapSlice: StateCreator
       return;
     }
     
-    // Get current state from other slices (will be passed in when combined)
-    const activeKpi: KPICode = 'IRI'; // From filter slice
-    const currentYear = 2025; // From filter slice
+    // TODO: Get these from other slices when combined
+    const activeKpi: KPICode = 'IRI';
+    const currentYear = 2025;
+    const themeMode = 'light';
     
     try {
       const renderer = LARendererService.createLARenderer(
         activeKpi,
         currentYear,
-        laMetricType
+        laMetricType,
+        themeMode
       );
       
       laLayer.renderer = renderer as any;
@@ -623,13 +576,9 @@ export const createMapSlice: StateCreator
     const { roadLayer } = get();
     
     if (roadLayer) {
-      // Store current definition expression
       const currentExpression = (roadLayer as any).definitionExpression || '1=1';
       set({ preSwipeDefinitionExpression: currentExpression });
-      
-      // Hide the layer
       roadLayer.visible = false;
-      
       console.log('[Swipe] Hidden road network, stored filter:', currentExpression);
     }
   },
@@ -641,12 +590,8 @@ export const createMapSlice: StateCreator
     const { roadLayer, preSwipeDefinitionExpression } = get();
     
     if (roadLayer && preSwipeDefinitionExpression) {
-      // Restore definition expression
       (roadLayer as any).definitionExpression = preSwipeDefinitionExpression;
-      
-      // Make layer visible only if a filter was active
       roadLayer.visible = preSwipeDefinitionExpression !== '1=1';
-      
       console.log('[Swipe] Restored road network with filter:', preSwipeDefinitionExpression);
     }
     
@@ -667,10 +612,3 @@ export const createMapSlice: StateCreator
     get().restoreRoadNetworkVisibility();
   },
 });
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export type { MapSlice };
-export { createMapSlice };

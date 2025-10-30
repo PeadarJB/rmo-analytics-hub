@@ -1,4 +1,4 @@
-// src/components/SimpleSwipePanel.tsx - Fixed version for RMO
+// src/components/SimpleSwipePanel.tsx - FIXED VERSION
 
 import { useState, useEffect, useCallback, FC } from 'react';
 import { Card, Select, Button, Space, Slider, Radio, Tag, message, Divider, theme } from 'antd';
@@ -21,6 +21,13 @@ import { CONFIG, LA_LAYER_CONFIG, SWIPE_LAYER_CONFIG } from '@/config/appConfig'
 import { KPI_LABELS } from '@/config/kpiConfig';
 
 interface SimpleSwipePanelProps {}
+
+// FIXED: Define year options explicitly based on available survey years
+const YEAR_OPTIONS = [
+  { label: '2011', value: 2011 },
+  { label: '2018', value: 2018 },
+  { label: '2025', value: 2025 }
+];
 
 const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   const { styles: panelStyles } = usePanelStyles();
@@ -49,6 +56,24 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   const [position, setPosition] = useState(50);
 
   /**
+   * Find a specific LA polygon layer from cache
+   */
+  const findLayer = useCallback((kpi: KPIKey, year: number): FeatureLayer | null => {
+    if (!laLayerCache) return null;
+    
+    const key = `${kpi.toLowerCase()}_${year}_average`;
+    const layer = laLayerCache.get(key);
+    
+    if (layer) {
+      console.log(`[Swipe] Found layer: ${key}`);
+      return layer;
+    }
+    
+    console.warn(`[Swipe] Layer not found: ${key}`);
+    return null;
+  }, [laLayerCache]);
+
+  /**
    * Stops the swipe widget, hides layers, and cleans up.
    */
   const stopSwipe = useCallback(() => {
@@ -72,49 +97,30 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   }, [stopSwipe]);
   
   /**
-   * Finds a specific LA polygon layer from the store's Map object or webmap.
-   */
-  const findLayer = (kpi: KPIKey, year: number): FeatureLayer | undefined => {
-    const cacheKey = `${kpi}_${year}_average`;
-    console.log(`Looking for layer in cache with key: "${cacheKey}"`);
-    
-    const layer = laLayerCache.get(cacheKey);
-    if (layer) {
-      console.log(`Found layer in cache: ${layer.title}`);
-      return layer;
-    }
-    
-    // Fallback to searching webmap if not in cache (should be rare)
-    const layerTitle = LA_LAYER_CONFIG.layerTitlePattern(kpi, year);
-    console.warn(`Layer not found in cache for key "${cacheKey}". Searching webmap for title "${layerTitle}"...`);
-    const webmapLayer = webmap?.allLayers.find((l: any) => l.title === layerTitle) as FeatureLayer | undefined;
-    if (webmapLayer) return webmapLayer;
-
-    return undefined;
-  };
-
-  /**
-   * Initializes and starts the ArcGIS Swipe widget.
+   * Starts swipe mode with selected years
    */
   const startSwipe = async () => {
     if (!view || !webmap) {
-      message.error("Map is not ready. Please try again.");
+      message.error('Map not initialized');
       return;
     }
-
+    
+    if (leftYear === rightYear) {
+      message.warning('Please select different years to compare');
+      return;
+    }
+    
     try {
-      enterSwipeMode();
-
+      // Import Swipe widget dynamically
+      const [{ default: Swipe }] = await Promise.all([
+        import('@arcgis/core/widgets/Swipe')
+      ]);
+      
       const leftLayer = findLayer(activeKpi, leftYear);
       const rightLayer = findLayer(activeKpi, rightYear);
-
+      
       if (!leftLayer || !rightLayer) {
-        message.error(`Could not find comparison layers for ${KPI_LABELS[activeKpi]}`);
-        console.error('Missing layers:', {
-          leftLayer: leftLayer ? 'found' : `NOT FOUND (${LA_LAYER_CONFIG.layerTitlePattern(activeKpi, leftYear)})`,
-          rightLayer: rightLayer ? 'found' : `NOT FOUND (${LA_LAYER_CONFIG.layerTitlePattern(activeKpi, rightYear)})`
-        });
-        exitSwipeMode();
+        message.error('Required layers not found in map');
         return;
       }
       
@@ -125,35 +131,27 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
         });
       }
       
-      // Make only the swipe layers visible
+      // Make comparison layers visible
       leftLayer.visible = true;
       rightLayer.visible = true;
-
-      // Dynamically import and create swipe widget
-      const SwipeModule = await import('@arcgis/core/widgets/Swipe');
-      const SwipeWidget = SwipeModule.default;
       
-      const swipe = new SwipeWidget({
-        view: view,
+      // Create swipe widget
+      const swipe = new Swipe({
+        view,
         leadingLayers: [leftLayer],
         trailingLayers: [rightLayer],
-        direction: direction,
-        position: position,
-        // Ensure the widget is enabled
-        disabled: false
+        direction,
+        position
       });
-
-      // Add to the view UI
-      view.ui.add(swipe);
       
-      // Store reference
+      view.ui.add(swipe);
       setSwipeWidget(swipe);
+      enterSwipeMode();
       useAppStore.setState({ isSwipeActive: true });
       setSwipeYears(leftYear, rightYear);
       
       message.success('Layer comparison activated');
       
-      // Log for debugging
       console.log('Swipe widget created:', {
         leadingLayer: leftLayer.title,
         trailingLayer: rightLayer.title,
@@ -171,7 +169,6 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   // Effect to auto-restart swipe if the active KPI changes while active
   useEffect(() => {
     if (isSwipeActive && swipeWidget) {
-      // Update the layers when KPI changes
       const updateSwipeLayers = async () => {
         const leftLayer = findLayer(activeKpi, leftYear);
         const rightLayer = findLayer(activeKpi, rightYear);
@@ -219,10 +216,11 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
     setShowSwipe(false);
   };
   
-  const yearOptions = CONFIG.filters.year.options?.map(o => ({ 
-    label: o.label, 
-    value: o.value 
-  })) ?? [];
+  // FIXED: Use explicitly defined year options with proper typing
+  const yearOptions = YEAR_OPTIONS.map((option) => ({
+    label: option.label,
+    value: option.value
+  }));
 
   if (!view) return null;
 

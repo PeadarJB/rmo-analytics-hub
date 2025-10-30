@@ -198,9 +198,13 @@ const App: React.FC = () => {
         <div style={{ 
           padding: 12, 
           textAlign: 'center',
+          height: 64,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}>
           <img src="/img/RMO_Logo.png" alt="RMO Logo" style={{ 
-            height: '50%',
+            height: '100%',
             transition: 'all 0.3s ease',
             maxWidth: siderHovered ? '70%' : '32px' 
           }} />

@@ -230,7 +230,7 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
       return;
     }
     debouncedFetchData(roadLayer, currentFilters, activeKpi, groupBy, stackedMode);
-  }, [roadLayer, activeKpi, currentFilters, groupBy, stackedMode]);
+  }, [roadLayer, activeKpi, currentFilters, groupBy, stackedMode, debouncedFetchData]);
 
   const handleChartClick = useCallback(async (event: ChartEvent, elements: ActiveElement[]) => {
     if (!elements.length || !roadLayer || !mapView) return;
@@ -552,10 +552,19 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
           {isChartFilterActive && (
             <Button
               size="small"
-              onClick={() => {
+              onClick={async () => {
                 clearChartSelections();
-                (roadLayer as any).definitionExpression = previousDefinitionExpression.current;
+                if (roadLayer) {
+                  (roadLayer as any).definitionExpression = previousDefinitionExpression.current;
+                }
                 setSelectedSegment(null);
+                // ADD: Zoom back to original extent
+                if (mapView) {
+                  await mapView.goTo(CONFIG.map.defaultExtent, {
+                    duration: 1000,
+                    easing: 'ease-in-out'
+                  });
+                }
               }}
               type="text"
               danger

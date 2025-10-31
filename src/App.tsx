@@ -6,8 +6,8 @@ import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import EnhancedFilterPanel from '@/components/EnhancedFilterPanel';
-import EnhancedStatsPanel from '@/components/EnhancedStatsPanel';
-import LALayerControl from '@/components/LALayerControl';
+import EnhancedStatsPanel from '@/components/EnhancedStatsPanel'; 
+import EnhancedSwipePanel from '@/components/EnhancedSwipePanel';
 import { CONFIG } from '@/config/appConfig';
 import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 
@@ -23,7 +23,8 @@ const App: React.FC = () => {
     initializeMap, themeMode, setThemeMode,
     showFilters, setShowFilters,
     showStats, setShowStats,
-    showChart, setShowChart,
+    showChart, setShowChart, 
+    showSwipe,
     loading, loadingMessage,
     activeKpi, setActiveKpi,
     currentPage, setCurrentPage,
@@ -144,15 +145,14 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* NEW: Add LA Layer Control */}
-      <div style={{
-        position: 'absolute',
-        bottom: '20px',
-        left: '20px',
-        zIndex: 10
-      }}>
-        <LALayerControl />
-      </div>
+      {/* NEW: Add EnhancedSwipePanel, conditionally rendered [cite: RMO_SPRINT_ROADMAP.md] */}
+      {showSwipe && (
+        <Suspense fallback={<Spin />}>
+          <EnhancedSwipePanel />
+        </Suspense>
+      )}
+
+      {/* REMOVED: LALayerControl component is now integrated into EnhancedSwipePanel [cite: RMO_SPRINT_ROADMAP.md] */}
     </div>
   );
 

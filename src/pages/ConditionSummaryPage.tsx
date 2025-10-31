@@ -5,8 +5,8 @@ import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
 import LoadingOverlay from '@/components/LoadingOverlay';
-import SimpleSwipePanel from '@/components/SimpleSwipePanel';
-import { CONFIG } from '@/config/appConfig';
+// import SimpleSwipePanel from '@/components/SimpleSwipePanel';
+import EnhancedSwipePanel from '@/components/EnhancedSwipePanel';
 import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 
 const { Header, Content } = Layout;
@@ -103,7 +103,7 @@ const ConditionSummaryPage: React.FC = () => {
           <LoadingOverlay visible={loading} message={loadingMessage ?? 'Updating map...'} />
           {showSwipe && (
             <div className={styles.swipePanel}>
-              <SimpleSwipePanel />
+              <EnhancedSwipePanel />
             </div>
           )}
         </div>

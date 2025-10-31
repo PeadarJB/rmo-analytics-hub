@@ -28,6 +28,7 @@ const App: React.FC = () => {
     loading, loadingMessage,
     activeKpi, setActiveKpi
   } = useAppStore();
+  const [siderHovered, setSiderHovered] = useState(false);
   const [isHoveringChart, setIsHoveringChart] = useState(false);
 
   const { styles } = usePanelStyles();
@@ -158,33 +159,25 @@ const App: React.FC = () => {
   return withTheme(themeMode, (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider 
-        collapsed={true}
-        width={60} 
+        collapsed={!siderHovered}
+        width={220} 
         style={{
           background: token.colorBgLayout,
           borderRight: `1px solid ${token.colorBorder}`,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          transition: 'all 0.3s ease'
         }}
         trigger={null}
         collapsedWidth={60}
+        onMouseEnter={() => setSiderHovered(true)}
+        onMouseLeave={() => setSiderHovered(false)}
       >
-        {/* Logo */}
-        <div style={{ 
-          padding: '12px 0', 
-          textAlign: 'center',
-          height: 64,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          {/* START REMOVAL: Delete this img tag */}
-          {/* END REMOVAL */}
-        </div>
-
         {/* Sider navigation icons */}
-        <div style={{ textAlign: 'center', padding: '12px 0' }}>
+        <div style={{ textAlign: siderHovered ? 'left' : 'center', padding: siderHovered ? '0 12px' : '12px 0' }}>
           <Tooltip title="Overview Dashboard" placement="right">
-            <BarChartOutlined style={{ fontSize: 24, color: token.colorPrimary, cursor: 'pointer' }} />
+            <div style={{ color: token.colorPrimary, cursor: 'pointer', padding: '12px', borderRadius: '4px' }}>
+              {siderHovered ? 'Overview Dashboard' : <BarChartOutlined style={{ fontSize: 24 }} />}
+            </div>
           </Tooltip>
         </div>
       </Sider>

@@ -71,7 +71,6 @@ interface AppState {
   laLayer: __esri.FeatureLayer | null;
   laLayerVisible: boolean;
   laMetricType: LAMetricType;
-  laLayerCache: Map<string, FeatureLayer>;
 
   // Actions
   initializeMap: (containerId: string) => Promise<void>;
@@ -105,13 +104,10 @@ interface AppState {
 
   // New actions for Task 13
   setSwipeYears: (left: number, right: number) => void;
-  updateLALayerVisibility: () => void;
-  setLaLayersVisibility: (visible: boolean) => void;
   setLALayer: (layer: __esri.FeatureLayer | null) => void;
   setLALayerVisible: (visible: boolean) => void;
   setLAMetricType: (metricType: LAMetricType) => void;
   updateLALayerRenderer: () => void;
-  updateLASwipeLayers: (kpi: KPIKey) => void;
   enterSwipeMode: () => void;
   exitSwipeMode: () => void;
 }
@@ -166,7 +162,6 @@ const useAppStore = create<AppState>()(
         // NEW: LA Layer Initial State
         laLayer: null,
         laLayerVisible: false,
-        laLayerCache: new Map(),
         laMetricType: 'average',
 
         setError: (err) => set({ error: err }),
@@ -227,12 +222,8 @@ const useAppStore = create<AppState>()(
           set({ activeKpi: k });
           get().updateRenderer();
           get().calculateStatistics();
-          // If in swipe mode, update LA layers too
-          if (get().isSwipeActive) {
-            get().updateLASwipeLayers(k);
-          }
-          // Optionally ensure LA layers reflect KPI change:
-          get().updateLALayerVisibility();
+          // Update LA layer renderer when KPI changes
+          get().updateLALayerRenderer();
         },
 
         setFilters: (f) => {
@@ -508,36 +499,10 @@ const useAppStore = create<AppState>()(
             
             console.log('Initializing new map view...');
             const { view, webmap } = await MapViewService.initializeMapView(
-              containerId, 
+              containerId,
               CONFIG.webMapId
             );
-            
-            //  ADD: Build LA layer cache for O(1) lookups
-            const laCache = new Map<string, FeatureLayer>();
-            
-            webmap.layers.forEach(layer => {
-              const layerTitle = layer.title;
-              
-              // Only proceed if the layer has a title
-              if (layerTitle) {
-                // Check if this is an LA polygon layer
-                // Pattern: "Average [KPI] [YEAR]"
-                const laPattern = /^Average\s+(IRI|RUT|PSCI|CSC|MPD|LPV)\s+(2011|2018|2025)$/i;
-                const match = layerTitle.match(laPattern);
-                
-                if (match && layer.type === 'feature') {
-                  const kpi = match[1].toLowerCase();
-                  const year = parseInt(match[2]);
-                  
-                  // Store with consistent key format
-                  const cacheKey = `${kpi}_${year}_average`;  // e.g., "iri_2025_average"
-                  laCache.set(cacheKey, layer as FeatureLayer);
-                  
-                  console.log(`[LA Cache] Registered: ${cacheKey}  "${layerTitle}"`);
-                }
-              }
-            });
-            
+
             // Store reference on container for future guard checks
             (container as any).__esri_mapview = view;
             
@@ -551,43 +516,36 @@ const useAppStore = create<AppState>()(
 
             // Find single LA polygon layer
             const laLayer = webmap.allLayers.find(
-              (l: any) => l.title === CONFIG.laPolygonLayerTitle
+              (l: any) => l.title === 'RMO LA Data'
             ) as FeatureLayer | undefined;
 
             if (laLayer) {
-              console.log(' Found LA polygon layer:', laLayer.title);
-              await laLayer.load(); // Load to access fields
+              console.log('✓ Found LA layer:', laLayer.title);
+              await laLayer.load();
               laLayer.visible = false; // Hidden by default
-              
-              // Set opacity and z-order
               laLayer.opacity = 0.7;
-              
-              // Move LA layer below road network
+
+              // Position below road network
               if (road) {
                 const roadIndex = webmap.layers.indexOf(road as any);
                 webmap.reorder(laLayer, roadIndex);
               }
-              
-              // Store in state
-              get().setLALayer(laLayer);
-            } else {
-              console.warn(' LA polygon layer not found:', CONFIG.laPolygonLayerTitle);
             }
-            
+
             if (!road) {
               message.warning('Road network layer not found. Check layer title in config.');
             }
-            
+
             set({
               mapView: view,
               webmap,
               roadLayer: road ?? null,
               roadLayerSwipe: roadSwipe ?? null,
               initialExtent: view.extent ?? null,
-              laLayerCache: laCache,
+              laLayer: laLayer ?? null,
               loading: false,
               loadingMessage: null,
-              mapInitialized: true, // Mark as initialized
+              mapInitialized: true,
               error: null
             });
             
@@ -962,75 +920,10 @@ const useAppStore = create<AppState>()(
 
         setSwipeYears: (left, right) => {
           set({ leftSwipeYear: left, rightSwipeYear: right });
-          // The single LA layer visibility is now managed by setLALayerVisible
-          // and its renderer updated by updateLALayerRenderer
-          get().updateLALayerRenderer();
         },
-
-        /**
-         * Updates LA polygon layer visibility using cached layer references.
-         * O(1) lookup performance vs O(n) layer searching.
-         */
-        updateLALayerVisibility: () => {
-          const {
-            activeKpi,
-            leftSwipeYear,
-            rightSwipeYear,
-            laLayerCache,
-            showSwipe
-          } = get();
-          
-          // Fast exit if cache not built yet
-          if (laLayerCache.size === 0) {
-            console.warn('[LA Visibility] Layer cache not initialized yet');
-            return;
-          }
-          
-          const startTime = performance.now();
-          const shouldShow = showSwipe;
-          
-          // Build keys for layers that should be visible
-          const leftKey = `${activeKpi}_${leftSwipeYear}_average`;
-          const rightKey = `${activeKpi}_${rightSwipeYear}_average`;
-          
-          let updatedCount = 0;
-          
-          // Hide all LA layers first (fast iteration over cached layers only)
-          for (const [key, layer] of laLayerCache.entries()) {
-            if (layer.visible) {
-              layer.visible = false;
-              updatedCount++;
-            }
-          }
-          
-          // Show only the relevant layers
-          if (shouldShow) {
-            const leftLayer = laLayerCache.get(leftKey);
-            const rightLayer = laLayerCache.get(rightKey);
-            
-            if (leftLayer) {
-              leftLayer.visible = true;
-              updatedCount++;
-              console.log(`[LA Visibility]  Showing left: ${leftKey}`);
-            } else {
-              console.warn(`[LA Visibility]  Left layer not found: ${leftKey}`);
-            }
-            
-            if (rightLayer && rightKey !== leftKey) {
-              rightLayer.visible = true;
-              updatedCount++;
-              console.log(`[LA Visibility]  Showing right: ${rightKey}`);
-            }
-          }
-          
-          const duration = performance.now() - startTime;
-          console.log(`[LA Visibility] Updated ${updatedCount} layers in ${duration.toFixed(2)}ms`);
-        },
-        setLaLayersVisibility: (visible) => { /* No-op */ },
 
         /**
          * Update LA layer renderer based on current KPI, year, and metric type
-         * This method will be implemented in Phase 6 when we integrate the renderer
          */
         updateLALayerRenderer: () => {
           const { laLayer, activeKpi, currentFilters, laMetricType, themeMode } = get();
@@ -1054,47 +947,6 @@ const useAppStore = create<AppState>()(
             console.log(' LA layer renderer updated successfully');
           } catch (error) {
             console.error('Error updating LA layer renderer:', error);
-          }
-        },
-
-        /**
-         * Updates the LA layers in the swipe widget when KPI changes
-         */
-        updateLASwipeLayers: (kpi) => {
-          const { leftSwipeYear, rightSwipeYear, laLayerCache, mapView } = get();
-          
-          if (!mapView) return;
-          
-          // Find the swipe widget on the map view
-          const swipeWidget = mapView.ui.find('rmo-swipe-widget') as __esri.Swipe;
-          if (!swipeWidget) {
-            console.warn('[Swipe] updateLASwipeLayers: Swipe widget not found.');
-            return;
-          }
-
-          const leftKey = `${kpi.toLowerCase()}_${leftSwipeYear}_average`;
-          const rightKey = `${kpi.toLowerCase()}_${rightSwipeYear}_average`;
-
-          const leftLayer = laLayerCache.get(leftKey);
-          const rightLayer = laLayerCache.get(rightKey);
-
-          if (leftLayer && rightLayer) {
-            // Hide all LA layers first
-            laLayerCache.forEach(layer => layer.visible = false);
-
-            // Update swipe widget layers
-            swipeWidget.leadingLayers.removeAll();
-            swipeWidget.trailingLayers.removeAll();
-            swipeWidget.leadingLayers.add(leftLayer);
-            swipeWidget.trailingLayers.add(rightLayer);
-
-            // Ensure visibility and opacity
-            leftLayer.visible = true;
-            rightLayer.visible = true;
-            
-            console.log(`[Swipe] Updated swipe layers for ${kpi}`);
-          } else {
-            console.warn(`[Swipe] Could not find LA layers for ${kpi}: ${leftKey}, ${rightKey}`);
           }
         },
       }),

@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, FC } from 'react';
+import React, { useState, useEffect, useCallback, FC, useMemo } from 'react';
 import { Card, Select, Button, Space, Radio, Divider, Typography, message } from 'antd';
 import { SwapOutlined, CloseOutlined } from '@ant-design/icons';
 import useAppStore from '@/store/useAppStore';
-import type { KPIKey } from '@/config/kpiConfig';
 import type { LAMetricType } from '@/config/appConfig';
 import type Swipe from '@arcgis/core/widgets/Swipe';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import { usePanelStyles } from '@/styles/styled';
+import { cloneLALayer, removeClonedLayer } from '@/utils/layerCloneHelper';
 
 const { Text } = Typography;
 
@@ -20,8 +20,9 @@ const EnhancedSwipePanel: FC = () => {
   const { styles } = usePanelStyles();
   const {
     mapView,
+    webmap,
+    laLayer,
     activeKpi,
-    laLayerCache,
     leftSwipeYear,
     rightSwipeYear,
     setSwipeYears,
@@ -31,123 +32,122 @@ const EnhancedSwipePanel: FC = () => {
     enterSwipeMode,
     exitSwipeMode,
     setShowSwipe,
+    themeMode,
   } = useAppStore();
 
   const [swipeWidget, setSwipeWidget] = useState<Swipe | null>(null);
+  const [leftClone, setLeftClone] = useState<FeatureLayer | null>(null);
+  const [rightClone, setRightClone] = useState<FeatureLayer | null>(null);
   const [direction, setDirection] = useState<'horizontal' | 'vertical'>('horizontal');
-
-  /**
-   * Helper function to find a layer from the cache
-   * Key format: e.g., "iri_2025_average"
-   */
-  const findLayer = useCallback((kpi: KPIKey, year: number, metric: LAMetricType): FeatureLayer | null => {
-    if (!laLayerCache) return null;
-    const key = `${kpi.toLowerCase()}_${year}_${metric}`;
-    const layer = laLayerCache.get(key);
-    
-    if (layer) {
-      console.log(`[Swipe] Found layer: ${key}`);
-      return layer;
-    }
-    
-    console.warn(`[Swipe] Layer not found in cache: ${key}`);
-    return null;
-  }, [laLayerCache]);
 
   /**
    * Deactivates and destroys the swipe widget
    */
   const deactivateSwipe = useCallback(() => {
-    if (swipeWidget) {
-      // Hide layers and reset opacity to default
-      swipeWidget.leadingLayers.forEach(layer => {
-        if (layer) {
-          layer.visible = false;
-          layer.opacity = 0.7; // Reset to default
-        }
-      });
-      swipeWidget.trailingLayers.forEach(layer => {
-        if (layer) {
-          layer.visible = false;
-          layer.opacity = 0.7; // Reset to default
-        }
-      });
-
-      mapView?.ui.remove(swipeWidget);
+    // Remove widget
+    if (swipeWidget && mapView) {
+      mapView.ui.remove(swipeWidget);
       swipeWidget.destroy();
       setSwipeWidget(null);
     }
-    exitSwipeMode(); // Restores road network
-    message.info('Compare mode deactivated');
-  }, [swipeWidget, mapView, exitSwipeMode]);
+
+    // Remove clones
+    if (webmap) {
+      if (leftClone) {
+        removeClonedLayer(webmap, leftClone);
+        setLeftClone(null);
+      }
+      if (rightClone) {
+        removeClonedLayer(webmap, rightClone);
+        setRightClone(null);
+      }
+    }
+
+    // Show original
+    if (laLayer) {
+      laLayer.visible = true;
+    }
+
+    exitSwipeMode();
+    message.info('Comparison stopped');
+  }, [swipeWidget, mapView, webmap, leftClone, rightClone, laLayer, exitSwipeMode]);
 
   /**
    * Activates the swipe widget with current settings
    */
   const activateSwipe = useCallback(async () => {
-    if (!mapView) {
+    if (!mapView || !webmap || !laLayer) {
       message.error('Map not initialized');
       return;
     }
+
     if (leftSwipeYear === rightSwipeYear) {
-      message.warning('Please select different years to compare');
+      message.warning('Please select different years');
       return;
     }
 
-    // Dynamically import the Swipe widget
     try {
       const { default: Swipe } = await import('@arcgis/core/widgets/Swipe');
-      
-      const leftLayer = findLayer(activeKpi, leftSwipeYear, laMetricType);
-      const rightLayer = findLayer(activeKpi, rightSwipeYear, laMetricType);
-      
-      if (!leftLayer || !rightLayer) {
-        message.error(`Required LA layers for ${laMetricType} not found.`);
-        return;
-      }
-      
-      // Store calls now handle hiding road network & setting state
-      enterSwipeMode(); 
-      
-      // Hide all LA layers first
-      laLayerCache.forEach(layer => layer.visible = false);
-      
-      // Set opacity to 1.0 (fully opaque) as per requirements [cite: RMO_SPRINT_ROADMAP.md]
-      leftLayer.visible = true;
-      leftLayer.opacity = 1.0;
-      rightLayer.visible = true;
-      rightLayer.opacity = 1.0;
-      
+
+      // Hide original layer
+      laLayer.visible = false;
+      enterSwipeMode();
+
+      // Create clones
+      const left = cloneLALayer(
+        laLayer,
+        activeKpi,
+        leftSwipeYear,
+        laMetricType,
+        themeMode,
+        `${activeKpi.toUpperCase()} ${leftSwipeYear}`
+      );
+
+      const right = cloneLALayer(
+        laLayer,
+        activeKpi,
+        rightSwipeYear,
+        laMetricType,
+        themeMode,
+        `${activeKpi.toUpperCase()} ${rightSwipeYear}`
+      );
+
+      // Add to map
+      webmap.layers.add(left);
+      webmap.layers.add(right);
+
+      setLeftClone(left);
+      setRightClone(right);
+
+      // Wait for load
+      await Promise.all([left.when(), right.when()]);
+
+      // Create swipe
       const swipe = new Swipe({
         view: mapView,
-        leadingLayers: [leftLayer],
-        trailingLayers: [rightLayer],
+        leadingLayers: [left],
+        trailingLayers: [right],
         direction: direction,
-        position: 50,
-        id: 'rmo-swipe-widget' // Set ID for store to find
+        position: 50
       });
-      
+
       mapView.ui.add(swipe);
       setSwipeWidget(swipe);
-      message.success('Compare mode activated');
+
+      message.success(`Comparing ${leftSwipeYear} vs ${rightSwipeYear}`);
 
     } catch (error) {
-      console.error('Failed to create swipe:', error);
-      message.error('Failed to activate comparison');
+      console.error('[Swipe] Error:', error);
+      message.error('Failed to create comparison');
+
+      // Cleanup on error
+      if (leftClone) removeClonedLayer(webmap!, leftClone);
+      if (rightClone) removeClonedLayer(webmap!, rightClone);
+      setLeftClone(null);
+      setRightClone(null);
       exitSwipeMode();
     }
-  }, [
-    mapView, 
-    activeKpi, 
-    leftSwipeYear, 
-    rightSwipeYear, 
-    laMetricType, 
-    direction, 
-    laLayerCache, 
-    findLayer, 
-    enterSwipeMode, 
-    exitSwipeMode
-  ]);
+  }, [mapView, webmap, laLayer, activeKpi, leftSwipeYear, rightSwipeYear, laMetricType, themeMode, direction, leftClone, rightClone, enterSwipeMode, exitSwipeMode]);
 
   // Effect to clean up widget on unmount
   useEffect(() => {
@@ -158,30 +158,13 @@ const EnhancedSwipePanel: FC = () => {
     };
   }, [swipeWidget, deactivateSwipe]);
 
-  // Effect to update swipe widget layers if settings change while active
+  // Restart comparison if KPI or metric changes
   useEffect(() => {
-    if (!isSwipeActive || !swipeWidget) return;
-
-    const leftLayer = findLayer(activeKpi, leftSwipeYear, laMetricType);
-    const rightLayer = findLayer(activeKpi, rightSwipeYear, laMetricType);
-
-    if (leftLayer && rightLayer) {
-      // Hide all layers
-      laLayerCache.forEach(layer => layer.visible = false);
-      
-      // Update widget layers
-      swipeWidget.leadingLayers.removeAll();
-      swipeWidget.trailingLayers.removeAll();
-      swipeWidget.leadingLayers.add(leftLayer);
-      swipeWidget.trailingLayers.add(rightLayer);
-      
-      // Ensure visibility and opacity
-      leftLayer.visible = true;
-      leftLayer.opacity = 1.0;
-      rightLayer.visible = true;
-      rightLayer.opacity = 1.0;
+    if (isSwipeActive && swipeWidget) {
+      deactivateSwipe();
+      setTimeout(() => activateSwipe(), 100);
     }
-  }, [isSwipeActive, swipeWidget, activeKpi, leftSwipeYear, rightSwipeYear, laMetricType, findLayer, laLayerCache]);
+  }, [activeKpi, laMetricType]);
 
   // Effect to update swipe widget direction if it changes
   useEffect(() => {
@@ -189,6 +172,19 @@ const EnhancedSwipePanel: FC = () => {
       swipeWidget.direction = direction;
     }
   }, [swipeWidget, direction]);
+
+  // Check availability
+  const isFairOrBetterAvailable = useMemo(() => {
+    return leftSwipeYear === 2025 && rightSwipeYear === 2025;
+  }, [leftSwipeYear, rightSwipeYear]);
+
+  // Auto-switch if not available
+  useEffect(() => {
+    if (laMetricType === 'fairOrBetter' && !isFairOrBetterAvailable) {
+      setLAMetricType('average');
+      message.info('Switched to Average Values (Fair or Better only for 2025)');
+    }
+  }, [laMetricType, isFairOrBetterAvailable, setLAMetricType]);
 
   return (
     <div className={styles.filterPanel}>
@@ -253,11 +249,12 @@ const EnhancedSwipePanel: FC = () => {
                     </Text>
                   </Space>
                 </Radio>
-                <Radio value="fairOrBetter">
+                <Radio value="fairOrBetter" disabled={!isFairOrBetterAvailable}>
                   <Space direction="vertical" size={0}>
                     <Text>Fair or Better %</Text>
                     <Text type="secondary" style={{ fontSize: '12px' }}>
                       % of roads in acceptable condition
+                      {!isFairOrBetterAvailable && ' (Only for 2025 vs 2025)'}
                     </Text>
                   </Space>
                 </Radio>

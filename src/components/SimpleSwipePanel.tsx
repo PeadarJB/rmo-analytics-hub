@@ -1,9 +1,8 @@
-// src/components/SimpleSwipePanel.tsx - FIXED VERSION
+// src/components/SimpleSwipePanel.tsx
 
 import { useState, useEffect, useCallback, FC } from 'react';
 import { Card, Select, Button, Space, Slider, Radio, Tag, message, Divider, theme } from 'antd';
 import { CloseOutlined, SwapOutlined } from '@ant-design/icons';
-import type { KPIKey } from '@/config/kpiConfig';
 
 // Store imports
 import useAppStore from '@/store/useAppStore';
@@ -13,12 +12,13 @@ import { usePanelStyles } from '@/styles/styled';
 
 // Type imports
 import type Swipe from '@arcgis/core/widgets/Swipe';
-import type Layer from '@arcgis/core/layers/Layer';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 
 // Config imports
-import { CONFIG, LA_LAYER_CONFIG, SWIPE_LAYER_CONFIG } from '@/config/appConfig';
 import { KPI_LABELS } from '@/config/kpiConfig';
+
+// Clone helper
+import { cloneLALayer, removeClonedLayer } from '@/utils/layerCloneHelper';
 
 interface SimpleSwipePanelProps {}
 
@@ -37,68 +37,59 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   const {
     mapView: view,
     webmap,
+    laLayer,
     isSwipeActive,
     activeKpi,
-    laLayerCache,
     leftSwipeYear,
     rightSwipeYear,
     enterSwipeMode,
     exitSwipeMode,
     setSwipeYears,
     setShowSwipe,
+    laMetricType,
+    themeMode,
   } = useAppStore();
 
   // Local state for UI controls
   const [leftYear, setLeftYear] = useState<number>(leftSwipeYear);
   const [rightYear, setRightYear] = useState<number>(rightSwipeYear);
   const [swipeWidget, setSwipeWidget] = useState<Swipe | null>(null);
+  const [leftClone, setLeftClone] = useState<FeatureLayer | null>(null);
+  const [rightClone, setRightClone] = useState<FeatureLayer | null>(null);
   const [direction, setDirection] = useState<'horizontal' | 'vertical'>('horizontal');
   const [position, setPosition] = useState(50);
-
-  /**
-   * Find a specific LA polygon layer from cache
-   */
-  const findLayer = useCallback((kpi: KPIKey, year: number): FeatureLayer | null => {
-    if (!laLayerCache) return null;
-    
-    const key = `${kpi.toLowerCase()}_${year}_average`;
-    const layer = laLayerCache.get(key);
-    
-    if (layer) {
-      console.log(`[Swipe] Found layer: ${key}`);
-      return layer;
-    }
-    
-    console.warn(`[Swipe] Layer not found: ${key}`);
-    return null;
-  }, [laLayerCache]);
 
   /**
    * Stops the swipe widget, hides layers, and cleans up.
    */
   const stopSwipe = useCallback(() => {
-    if (swipeWidget && view) {      // START MODIFICATION
-      // Hide layers and reset opacity
-      swipeWidget.leadingLayers.forEach(layer => {
-        if(layer) {
-          layer.visible = false;
-          layer.opacity = 0.7; // Reset opacity
-        }
-      });
-      swipeWidget.trailingLayers.forEach(layer => {
-        if(layer) {
-          layer.visible = false;
-          layer.opacity = 0.7; // Reset opacity
-        }
-      });
-      // END MODIFICATION
+    // Remove widget
+    if (swipeWidget && view) {
       view.ui.remove(swipeWidget);
       swipeWidget.destroy();
-      exitSwipeMode(); // This store call now handles roadLayer visibility
       setSwipeWidget(null);
-      message.info('Layer comparison deactivated');
     }
-  }, [swipeWidget, view, exitSwipeMode]);
+
+    // Remove clones
+    if (webmap) {
+      if (leftClone) {
+        removeClonedLayer(webmap, leftClone);
+        setLeftClone(null);
+      }
+      if (rightClone) {
+        removeClonedLayer(webmap, rightClone);
+        setRightClone(null);
+      }
+    }
+
+    // Show original
+    if (laLayer) {
+      laLayer.visible = true;
+    }
+
+    exitSwipeMode();
+    message.info('Comparison stopped');
+  }, [swipeWidget, view, webmap, leftClone, rightClone, laLayer, exitSwipeMode]);
 
   // Cleanup effect when the component unmounts
   useEffect(() => {
@@ -109,108 +100,87 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
    * Starts swipe mode with selected years
    */
   const startSwipe = async () => {
-    if (!view || !webmap) {
+    if (!view || !webmap || !laLayer) {
       message.error('Map not initialized');
       return;
     }
-    
+
     if (leftYear === rightYear) {
-      message.warning('Please select different years to compare');
+      message.warning('Please select different years');
       return;
     }
-    
+
     try {
-      // Import Swipe widget dynamically
-      const [{ default: Swipe }] = await Promise.all([
-        import('@arcgis/core/widgets/Swipe')
-      ]);
-      
-      const leftLayer = findLayer(activeKpi, leftYear);
-      const rightLayer = findLayer(activeKpi, rightYear);
-      
-      if (!leftLayer || !rightLayer) {
-        message.error('Required layers not found in map');
-        return;
-      }
-      
-      // START MODIFICATION
-      // This call now handles hiding the road network and setting isSwipeActive
-      enterSwipeMode(); 
-      
-      // Hide all LA layers first
-      if (laLayerCache) {
-        laLayerCache.forEach((layer: FeatureLayer) => {
-          layer.visible = false;
-        });
-      }
-      
-      // Make comparison layers visible and set full opacity
-      leftLayer.visible = true;
-      leftLayer.opacity = 1.0;
-      rightLayer.visible = true;
-      rightLayer.opacity = 1.0;
-      // END MODIFICATION
-      
+      const { default: Swipe } = await import('@arcgis/core/widgets/Swipe');
+
+      // Hide original layer
+      laLayer.visible = false;
+      enterSwipeMode();
+
+      // Create clones
+      const left = cloneLALayer(
+        laLayer,
+        activeKpi,
+        leftYear,
+        laMetricType,
+        themeMode,
+        `${activeKpi.toUpperCase()} ${leftYear}`
+      );
+
+      const right = cloneLALayer(
+        laLayer,
+        activeKpi,
+        rightYear,
+        laMetricType,
+        themeMode,
+        `${activeKpi.toUpperCase()} ${rightYear}`
+      );
+
+      // Add to map
+      webmap.layers.add(left);
+      webmap.layers.add(right);
+
+      setLeftClone(left);
+      setRightClone(right);
+
+      // Wait for load
+      await Promise.all([left.when(), right.when()]);
+
       // Create swipe widget
       const swipe = new Swipe({
         view,
-        leadingLayers: [leftLayer],
-        trailingLayers: [rightLayer],
-        direction,
-        position,
-        id: 'rmo-swipe-widget' // ADDED ID
-      });
-      
-      view.ui.add(swipe);
-      setSwipeWidget(swipe);
-      setSwipeYears(leftYear, rightYear);
-      
-      message.success('Layer comparison activated');
-      
-      console.log('Swipe widget created:', {
-        leadingLayer: leftLayer.title,
-        trailingLayer: rightLayer.title,
+        leadingLayers: [left],
+        trailingLayers: [right],
         direction,
         position
       });
-      
+
+      view.ui.add(swipe);
+      setSwipeWidget(swipe);
+      setSwipeYears(leftYear, rightYear);
+
+      message.success(`Comparing ${leftYear} vs ${rightYear}`);
+
     } catch (error) {
-      console.error('Failed to create swipe:', error);
-      message.error('Failed to activate layer comparison');
+      console.error('[Swipe] Error:', error);
+      message.error('Failed to create comparison');
+
+      // Cleanup on error
+      if (leftClone) removeClonedLayer(webmap!, leftClone);
+      if (rightClone) removeClonedLayer(webmap!, rightClone);
+      setLeftClone(null);
+      setRightClone(null);
       exitSwipeMode();
     }
   };
   
-  // Effect to auto-restart swipe if the active KPI changes while active
+  // Restart comparison if KPI or metric changes
   useEffect(() => {
     if (isSwipeActive && swipeWidget) {
-      const updateSwipeLayers = async () => {
-        const leftLayer = findLayer(activeKpi, leftYear);
-        const rightLayer = findLayer(activeKpi, rightYear);
-        
-        if (leftLayer && rightLayer && swipeWidget) {
-          // Hide all LA layers
-          if (laLayerCache) {
-            laLayerCache.forEach((layer: FeatureLayer) => {
-              layer.visible = false;
-            });
-          }
-          
-          // Update swipe widget layers
-          swipeWidget.leadingLayers.removeAll();
-          swipeWidget.trailingLayers.removeAll();
-          swipeWidget.leadingLayers.add(leftLayer);
-          swipeWidget.trailingLayers.add(rightLayer);
-          
-          // Make layers visible
-          leftLayer.visible = true;
-          rightLayer.visible = true;
-        }
-      };
-      
-      updateSwipeLayers();
+      stopSwipe();
+      setTimeout(() => void startSwipe(), 100);
     }
-  }, [activeKpi, isSwipeActive, swipeWidget, leftYear, rightYear, laLayerCache, findLayer]);
+  }, [activeKpi, laMetricType]);
 
   const updatePosition = (value: number) => {
     setPosition(value);

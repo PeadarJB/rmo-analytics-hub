@@ -117,8 +117,8 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
     }
   }, []);
 
-  // Memoized data fetching logic
-  const fetchData = useCallback(async (
+  // Data fetching logic
+  const fetchData = async (
     layer: __esri.FeatureLayer, 
     filters: FilterState, 
     kpi: KPIKey, 
@@ -216,7 +216,7 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   // Create a debounced version of the data fetcher
   const debouncedFetchData = useDebouncedCallback(fetchData, 300);

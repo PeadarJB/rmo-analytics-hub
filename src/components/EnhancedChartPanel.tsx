@@ -560,7 +560,7 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
                 setSelectedSegment(null);
                 // ADD: Zoom back to original extent
                 if (mapView) {
-                  await mapView.goTo(CONFIG.map.defaultExtent, {
+                  await mapView.goTo(CONFIG.map, {
                     duration: 1000,
                     easing: 'ease-in-out'
                   });

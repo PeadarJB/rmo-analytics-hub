@@ -31,6 +31,7 @@ type ThemeMode = 'light' | 'dark';
 
 interface AppState {
   loading: boolean;
+  loadingMessage: string | null;
   mapView: MapView | null;
   webmap: WebMap | null;
   roadLayer: FeatureLayer | null;
@@ -128,7 +129,8 @@ const useAppStore = create<AppState>()(
   devtools(
     persist(
       (set, get) => ({
-        loading: true,
+        loading: false,
+        loadingMessage: null,
         mapView: null,
         webmap: null,
         roadLayer: null,
@@ -261,7 +263,7 @@ const useAppStore = create<AppState>()(
             if (typeof f.year === 'string') {
               const parsed = parseInt(f.year, 10);
               if (!isNaN(parsed) && parsed >= 2000 && parsed <= 2030) {
-                console.warn(`[SetFilters] Coerced year from string to number: "${f.year}" → ${parsed}`);
+                console.warn(`[SetFilters] Coerced year from string to number: "${f.year}"  ${parsed}`);
                 newFilters.year = parsed;
               } else {
                 console.warn(`[SetFilters] Invalid year "${f.year}", using default`);
@@ -306,6 +308,39 @@ const useAppStore = create<AppState>()(
 
         clearAllFilters: async () => {
           const state = get();
+          const timerLabel = '[Filters] clearAllFilters';
+          console.time(timerLabel);
+          const definitionLabel = `${timerLabel}:definition`;
+          const extentLabel = `${timerLabel}:extent`;
+          const deferredLabel = `${timerLabel}:deferred`;
+          const rendererLabel = `${timerLabel}:updateRenderer`;
+          const statisticsLabel = `${timerLabel}:statistics`;
+
+          const safeTimeEnd = (label: string) => {
+            try {
+              console.timeEnd(label);
+            } catch {
+              // ignore missing timer
+            }
+          };
+
+          const safeTimeLog = (label: string, message: string) => {
+            if (typeof console.timeLog === 'function') {
+              console.timeLog(label, message);
+            }
+          };
+
+          const scheduleDeferred = (callback: () => void) => {
+            if (typeof window !== 'undefined') {
+              const idle = (window as any).requestIdleCallback;
+              if (typeof idle === 'function') {
+                return idle(() => callback());
+              }
+              return window.setTimeout(callback, 0);
+            }
+
+            return setTimeout(callback, 0);
+          };
           
           // Preserve current year selection
           const currentYear = state.currentFilters.year || CONFIG.defaultYear;
@@ -322,43 +357,68 @@ const useAppStore = create<AppState>()(
             currentFilters: resetFilters,
             currentStats: null,
             appliedFiltersCount: 0,
-            loading: true
+            loading: true,
+            loadingMessage: 'Clearing filters...'
           });
           
           try {
-            // CRITICAL FIX: Proper sequencing
-            // 1. Reset layer definition expression FIRST
+            console.time(definitionLabel);
             if (state.roadLayer) {
               (state.roadLayer as any).definitionExpression = '1=1';
-              // Wait for layer to process the definition change
               await state.roadLayer.when();
             }
-            
-            // 2. THEN update renderer (this will refresh the layer internally)
-            state.updateRenderer();
-            
-            // 3. THEN reset map extent
+            safeTimeEnd(definitionLabel);
+
+            console.time(extentLabel);
             if (state.mapView && state.initialExtent) {
               await state.mapView.goTo(state.initialExtent, {
                 duration: 1000,
                 easing: 'ease-in-out'
               });
             }
-            
-            // 4. Finally recalculate statistics
-            await state.calculateStatistics();
-            
-            message.success(
-              `Filters cleared. Showing all ${state.activeKpi.toUpperCase()} data for ${currentYear}`,
-              3
-            );
-            
+            safeTimeEnd(extentLabel);
           } catch (error) {
-            console.error('Error resetting filters:', error);
+            console.error('Error resetting filters (immediate phase):', error);
             message.error('Failed to reset filters completely');
-          } finally {
-            set({ loading: false });
+            set({ loading: false, loadingMessage: null });
+            safeTimeEnd(definitionLabel);
+            safeTimeEnd(extentLabel);
+            console.timeEnd(timerLabel);
+            return;
           }
+
+          await new Promise<void>((resolve) => {
+            safeTimeLog(timerLabel, 'Scheduling deferred renderer and statistics work');
+
+            scheduleDeferred(() => {
+              console.time(deferredLabel);
+
+              (async () => {
+                try {
+                  console.time(rendererLabel);
+                  state.updateRenderer();
+                  safeTimeEnd(rendererLabel);
+
+                  console.time(statisticsLabel);
+                  await state.calculateStatistics();
+                  safeTimeEnd(statisticsLabel);
+
+                  message.success(
+                    `Filters cleared. Showing all ${state.activeKpi.toUpperCase()} data for ${currentYear}`,
+                    3
+                  );
+                } catch (error) {
+                  console.error('Error completing filter reset:', error);
+                  message.error('Failed to reset filters completely');
+                } finally {
+                  set({ loading: false, loadingMessage: null });
+                  safeTimeEnd(deferredLabel);
+                  console.timeEnd(timerLabel);
+                  resolve();
+                }
+              })();
+            });
+          });
         },
 
         /**
@@ -437,7 +497,7 @@ const useAppStore = create<AppState>()(
           }
           
           try {
-            set({ loading: true, error: null });
+            set({ loading: true, loadingMessage: 'Loading map...', error: null });
             
             // Check if container exists
             const container = document.getElementById(containerId);
@@ -461,7 +521,7 @@ const useAppStore = create<AppState>()(
               CONFIG.webMapId
             );
             
-            // ✅ ADD: Build LA layer cache for O(1) lookups
+            //  ADD: Build LA layer cache for O(1) lookups
             const laCache = new Map<string, FeatureLayer>();
             
             webmap.layers.forEach(layer => {
@@ -482,7 +542,7 @@ const useAppStore = create<AppState>()(
                   const cacheKey = `${kpi}_${year}_average`;  // e.g., "iri_2025_average"
                   laCache.set(cacheKey, layer as FeatureLayer);
                   
-                  console.log(`[LA Cache] Registered: ${cacheKey} → "${layerTitle}"`);
+                  console.log(`[LA Cache] Registered: ${cacheKey}  "${layerTitle}"`);
                 }
               }
             });
@@ -504,7 +564,7 @@ const useAppStore = create<AppState>()(
             ) as FeatureLayer | undefined;
 
             if (laLayer) {
-              console.log('✓ Found LA polygon layer:', laLayer.title);
+              console.log(' Found LA polygon layer:', laLayer.title);
               await laLayer.load(); // Load to access fields
               laLayer.visible = false; // Hidden by default
               
@@ -520,7 +580,7 @@ const useAppStore = create<AppState>()(
               // Store in state
               get().setLALayer(laLayer);
             } else {
-              console.warn('⚠ LA polygon layer not found:', CONFIG.laPolygonLayerTitle);
+              console.warn(' LA polygon layer not found:', CONFIG.laPolygonLayerTitle);
             }
             
             if (!road) {
@@ -535,6 +595,7 @@ const useAppStore = create<AppState>()(
               initialExtent: view.extent ?? null,
               laLayerCache: laCache,
               loading: false,
+              loadingMessage: null,
               mapInitialized: true, // Mark as initialized
               error: null
             });
@@ -561,6 +622,7 @@ const useAppStore = create<AppState>()(
             set({ 
               error: errorMsg, 
               loading: false,
+              loadingMessage: null,
               mapInitialized: false // Reset on error
             });
             message.error(errorMsg);
@@ -713,20 +775,16 @@ const useAppStore = create<AppState>()(
           const startTime = performance.now();
           
           try {
-            // ✅ Get renderer (cached if possible - major performance win)
-            // The RendererService will return a cloned cached renderer if available
+            // Obtain renderer (cached if possible - major performance win)
             const renderer = RendererService.createRenderer(activeKpi, year, themeMode, true);
             
             // Apply renderer in next animation frame for non-blocking update
             requestAnimationFrame(() => {
               try {
-                // Apply to main road layer
                 (roadLayer as any).renderer = renderer;
                 
-                // Apply to swipe layer if exists
                 if (state.roadLayerSwipe) {
-                  // Clone again for swipe layer to avoid shared state
-                  const swipeRenderer = RendererService.createRenderer(activeKpi, year, themeMode, true);
+                  const swipeRenderer = renderer.clone();
                   (state.roadLayerSwipe as any).renderer = swipeRenderer;
                   state.roadLayerSwipe.refresh();
                 }
@@ -734,9 +792,8 @@ const useAppStore = create<AppState>()(
                 const duration = performance.now() - startTime;
                 const wasCached = duration < 10; // Cache hits are typically <10ms
                 
-                // Log performance metrics
                 console.log(
-                  `[Renderer] ${wasCached ? '⚡ Cached' : '🔨 New'} - Updated ${activeKpi}/${year} ` +
+                  `[Renderer] ${wasCached ? 'Cached' : 'New'} - Updated ${activeKpi}/${year} ` +
                   `in ${duration.toFixed(2)}ms`
                 );
                 
@@ -963,15 +1020,15 @@ const useAppStore = create<AppState>()(
             if (leftLayer) {
               leftLayer.visible = true;
               updatedCount++;
-              console.log(`[LA Visibility] ✓ Showing left: ${leftKey}`);
+              console.log(`[LA Visibility]  Showing left: ${leftKey}`);
             } else {
-              console.warn(`[LA Visibility] ⚠ Left layer not found: ${leftKey}`);
+              console.warn(`[LA Visibility]  Left layer not found: ${leftKey}`);
             }
             
             if (rightLayer && rightKey !== leftKey) {
               rightLayer.visible = true;
               updatedCount++;
-              console.log(`[LA Visibility] ✓ Showing right: ${rightKey}`);
+              console.log(`[LA Visibility]  Showing right: ${rightKey}`);
             }
           }
           
@@ -1003,7 +1060,7 @@ const useAppStore = create<AppState>()(
             // Apply renderer to layer
             laLayer.renderer = renderer;
             
-            console.log('✓ LA layer renderer updated successfully');
+            console.log(' LA layer renderer updated successfully');
           } catch (error) {
             console.error('Error updating LA layer renderer:', error);
           }

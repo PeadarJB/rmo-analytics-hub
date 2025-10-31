@@ -74,12 +74,12 @@ export default class RendererService {
   ): ClassBreaksRenderer {
     const cached = this.getCachedRenderer(kpi, year, themeMode);
     if (cached) {
-      console.log(`✓ Using cached renderer`);
+      console.log('Using cached renderer (clone returned)');
       return cached.clone();
     }
 
     // Cache miss - create new renderer
-    console.log(`🔨 Creating new renderer for ${kpi}/${year}/${themeMode}`);
+    console.log(`Creating new renderer for ${kpi}/${year}/${themeMode}`);
     const startTime = performance.now();
     
     const fieldName = getKPIFieldName(kpi, year, useClassField); // Use class field by default for performance
@@ -99,10 +99,10 @@ export default class RendererService {
     this.rendererCache.set(this.getCacheKey(kpi, year, themeMode), renderer);
     
     const duration = performance.now() - startTime;
-    console.log(`✓ Renderer created and cached in ${duration.toFixed(2)}ms`);
+    console.log(`Renderer created and cached in ${duration.toFixed(2)}ms`);
     
-    // Return the newly created renderer
-    return renderer;
+    // Return a clone so the cached instance stays immutable
+    return renderer.clone();
   }
 
   /**
@@ -139,7 +139,7 @@ export default class RendererService {
       this.addClassBreak(renderer, 4, 4, colors.poor as [number, number, number, number], lineWidth, 'Poor (1-4)');
     } else if (kpi === 'mpd') {
       // MPD: 3 classes (1=Good, 2=Fair, 3=Poor)
-      this.addClassBreak(renderer, 1, 1, colors.veryGood as [number, number, number, number], lineWidth, 'Good (≥0.7)');
+      this.addClassBreak(renderer, 1, 1, colors.veryGood as [number, number, number, number], lineWidth, 'Good (0.7)');
       this.addClassBreak(renderer, 2, 2, colors.fair as [number, number, number, number], lineWidth, 'Fair (0.6-0.7)');
       this.addClassBreak(renderer, 3, 3, colors.poor as [number, number, number, number], lineWidth, 'Poor (<0.6)');
     } else {
@@ -277,12 +277,12 @@ export default class RendererService {
     });
 
     this.isPreloaded = true;
-    console.log(`✓ Preloaded ${this.rendererCache.size} renderers`);
+    console.log(` Preloaded ${this.rendererCache.size} renderers`);
   }
 
   /**
    * Preload all possible renderer combinations at startup
-   * This creates all 18 renderers (6 KPIs × 3 years) in advance
+   * This creates all 18 renderers (6 KPIs  3 years) in advance
    * @returns Promise that resolves when all renderers are loaded
    */
   static async preloadAllRenderers(themeMode: 'light' | 'dark'): Promise<void> {
@@ -364,7 +364,7 @@ export default class RendererService {
     return {
       size: this.rendererCache.size,
       keys,
-      maxSize: 18, // 6 KPIs × 3 years = 18 renderers per theme
+      maxSize: 18, // 6 KPIs  3 years = 18 renderers per theme
       breakdown: {
         byKPI,
         byYear,
@@ -379,14 +379,14 @@ export default class RendererService {
    */
   static logCacheMetrics(): void {
     const stats = this.getCacheStats();
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('📊 RENDERER CACHE STATISTICS');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('');
+    console.log(' RENDERER CACHE STATISTICS');
+    console.log('');
     console.log(`Cache Size: ${stats.size} / ${stats.maxSize} (${Math.round(stats.size / stats.maxSize * 100)}% full)`);
     console.log('\nBreakdown by KPI:', stats.breakdown.byKPI);
     console.log('Breakdown by Year:', stats.breakdown.byYear);
     console.log('Breakdown by Theme:', stats.breakdown.byTheme);
     console.log('\nCached Keys:', stats.keys);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    console.log('\n');
   }
 }

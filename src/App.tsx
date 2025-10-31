@@ -4,6 +4,7 @@ import useAppStore from '@/store/useAppStore';
 import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
+import LoadingOverlay from '@/components/LoadingOverlay';
 import EnhancedFilterPanel from '@/components/EnhancedFilterPanel';
 import EnhancedStatsPanel from '@/components/EnhancedStatsPanel';
 import LALayerControl from '@/components/LALayerControl';
@@ -23,6 +24,7 @@ const App: React.FC = () => {
     showFilters, setShowFilters,
     showStats, setShowStats,
     showChart, setShowChart,
+    loading, loadingMessage,
     activeKpi, setActiveKpi,
     currentPage, setCurrentPage,
   } = useAppStore();
@@ -96,6 +98,7 @@ const App: React.FC = () => {
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div id="viewDiv" style={{ width: '100%', height: '100%' }} />
       <MapWidgets />
+      <LoadingOverlay visible={loading} message={loadingMessage ?? 'Updating map...'} />
 
       {(showFilters && showChart) ? (
         <div className={styles.panelContainer}>

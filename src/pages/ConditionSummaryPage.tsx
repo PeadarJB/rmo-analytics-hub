@@ -4,6 +4,7 @@ import useAppStore from '@/store/useAppStore';
 import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
+import LoadingOverlay from '@/components/LoadingOverlay';
 import SimpleSwipePanel from '@/components/SimpleSwipePanel';
 import { CONFIG } from '@/config/appConfig';
 import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
@@ -23,6 +24,8 @@ const ConditionSummaryPage: React.FC = () => {
     updateLALayerVisibility,
     leftSwipeYear,
     rightSwipeYear,
+    loading,
+    loadingMessage,
   } = useAppStore();
 
   const { styles } = usePanelStyles();
@@ -97,6 +100,7 @@ const ConditionSummaryPage: React.FC = () => {
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <div id="conditionViewDiv" style={{ width: '100%', height: '100%' }} />
           <MapWidgets />
+          <LoadingOverlay visible={loading} message={loadingMessage ?? 'Updating map...'} />
           {showSwipe && (
             <div className={styles.swipePanel}>
               <SimpleSwipePanel />

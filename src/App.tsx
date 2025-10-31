@@ -1,5 +1,5 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
-import { Layout, Typography, Switch, Segmented, theme, Spin, Card } from 'antd';
+import { Layout, Typography, Switch, Segmented, theme, Spin, Card, Tooltip } from 'antd';
 import useAppStore from '@/store/useAppStore';
 import { withTheme } from '@/config/themeConfig';
 import { usePanelStyles } from '@/styles/styled';
@@ -11,9 +11,9 @@ import EnhancedSwipePanel from '@/components/EnhancedSwipePanel';
 import { CONFIG } from '@/config/appConfig';
 import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 
+import { BarChartOutlined, LineChartOutlined } from '@ant-design/icons';
 // ✅ Lazy load heavy components
 const EnhancedChartPanel = lazy(() => import('@/components/EnhancedChartPanel'));
-const ConditionSummaryPage = lazy(() => import('@/pages/ConditionSummaryPage'));
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -24,12 +24,10 @@ const App: React.FC = () => {
     showFilters, setShowFilters,
     showStats, setShowStats,
     showChart, setShowChart, 
-    showSwipe,
+    showSwipe, setShowSwipe,
     loading, loadingMessage,
-    activeKpi, setActiveKpi,
-    currentPage, setCurrentPage,
+    activeKpi, setActiveKpi
   } = useAppStore();
-  const [siderHovered, setSiderHovered] = useState(false);
   const [isHoveringChart, setIsHoveringChart] = useState(false);
 
   const { styles } = usePanelStyles();
@@ -43,18 +41,7 @@ const App: React.FC = () => {
     }
   }, [isHoveringChart]);
 
-  // Guarded map init: only for Overview page, and only if container has no children
-  useEffect(() => {
-    if (currentPage !== 'overview') return;
-    const container = document.getElementById('viewDiv');
-    if (container && !container.hasChildNodes()) {
-      initializeMap('viewDiv');
-    }
-    return () => {
-      // No-op: store handles cleanup if needed
-    };
-  }, [currentPage, initializeMap]);
-
+  // START ADDITION: Restore the header controls
   const headerControls = (
     <div className={styles.headerRight}>
       <Segmented<KPIKey>
@@ -82,17 +69,29 @@ const App: React.FC = () => {
           unCheckedChildren="Chart"
         />
       </div>
+      <Switch 
+        checked={showSwipe} 
+        onChange={setShowSwipe} 
+        checkedChildren="Compare" 
+        unCheckedChildren="Compare"
+      />
       <Switch
         checked={themeMode === 'dark'}
-        onChange={(isDark) => {
-          const newMode = isDark ? 'dark' : 'light';
-          setThemeMode(newMode);
-        }}
+        onChange={(isDark) => setThemeMode(isDark ? 'dark' : 'light')}
         checkedChildren="Dark"
         unCheckedChildren="Light"
       />
     </div>
   );
+  // END ADDITION
+
+  // Guarded map init: only for Overview page, and only if container has no children
+  useEffect(() => {
+    const container = document.getElementById('viewDiv');
+    if (container && !container.hasChildNodes()) {
+      initializeMap('viewDiv');
+    }
+  }, [initializeMap]);
 
   // Overview page content (map + widgets + panels)
   const overviewContent = (
@@ -156,139 +155,75 @@ const App: React.FC = () => {
     </div>
   );
 
-  // FIXED: Better color calculation for sider items
-  const getSiderTextColor = (active: boolean): string => {
-    if (active) {
-      return token.colorPrimary;
-    }
-    // For dark mode, use a lighter color; for light mode, use the secondary text color
-    return themeMode === 'dark' ? '#D1D5DB' : token.colorTextSecondary;
-  };
-
-  const baseItemStyle: React.CSSProperties = {
-    cursor: 'pointer',
-    borderLeft: '3px solid transparent',
-    transition: 'all 0.2s ease',
-    borderRadius: 4,
-  };
-
-  const activeItemStyle = (active: boolean, pad: string | number): React.CSSProperties => ({
-    ...baseItemStyle,
-    color: getSiderTextColor(active),
-    padding: pad,
-    background: active ? token.colorPrimaryBg : 'transparent',
-    borderLeftColor: active ? token.colorPrimary : 'transparent',
-    fontWeight: active ? 600 : 400,
-  });
-
   return withTheme(themeMode, (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider 
-        collapsed={!siderHovered}
-        width={220} 
+        collapsed={true}
+        width={60} 
         style={{
           background: token.colorBgLayout,
           borderRight: `1px solid ${token.colorBorder}`,
-          transition: 'all 0.3s ease',
           overflow: 'hidden'
         }}
         trigger={null}
         collapsedWidth={60}
-        onMouseEnter={() => setSiderHovered(true)}
-        onMouseLeave={() => setSiderHovered(false)}
       >
         {/* Logo */}
         <div style={{ 
-          padding: 12, 
+          padding: '12px 0', 
           textAlign: 'center',
           height: 64,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'
         }}>
+          {/* START REMOVAL: Delete this img tag */}
+          {/* END REMOVAL */}
         </div>
 
-        {/* Sider navigation with conditional text */}
-        <button
-          style={{
-            ...activeItemStyle(currentPage === 'overview', 12),
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            background: 'none',
-            border: 'none',
-            width: '100%',
-            textAlign: 'left',
-            padding: 0,
-            cursor: 'pointer'
-          }}
-          onClick={() => setCurrentPage('overview')}
-        >
-          <div style={{ padding: 12 }}>
-            {siderHovered ? 'Overview Page' : '📊'}
-          </div>
-        </button>
-        <button
-          style={{
-            ...activeItemStyle(currentPage === 'condition-summary', '0 12px 12px'),
-            whiteSpace: 'nowrap', 
-            overflow: 'hidden',
-            background: 'none',
-            border: 'none',
-            width: '100%',
-            textAlign: 'left',
-            padding: 0,
-            cursor: 'pointer'
-          }}
-          onClick={() => setCurrentPage('condition-summary')}
-        >
-          <div style={{ padding: '0 12px 12px' }}>
-            {siderHovered ? 'Condition Summary Page' : '📈'}
-          </div>
-        </button>
+        {/* Sider navigation icons */}
+        <div style={{ textAlign: 'center', padding: '12px 0' }}>
+          <Tooltip title="Overview Dashboard" placement="right">
+            <BarChartOutlined style={{ fontSize: 24, color: token.colorPrimary, cursor: 'pointer' }} />
+          </Tooltip>
+        </div>
       </Sider>
 
       <Layout style={{ height: '100%', overflow: 'hidden' }}>
-        {currentPage === 'overview' ? (
-          <>
-            {/* FIXED: Explicit dark mode header styling */}
-            <Header style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              background: themeMode === 'dark' ? '#1F2937' : '#FFFFFF',
-              borderBottom: `1px solid ${token.colorBorder}`,
-              padding: '0 16px',
-              flexShrink: 0
-            }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <img 
-                src="/img/PMS-Logo-150x150.png" 
-                alt="PMS Logo" 
-                style={{ height: '40px', width: 'auto' }} 
-              />
-              <Title 
-                level={4} 
-                style={{ 
-                  margin: 0, 
-                  color: themeMode === 'dark' ? '#F3F4F6' : '#111827'
-                }}
-              >
-                {CONFIG.title}
-              </Title>
-              </div>
-              {headerControls}
-            </Header>
+        
+        {/* START MODIFICATION: Restore original Header structure */}
+        <Header style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: themeMode === 'dark' ? '#1F2937' : '#FFFFFF',
+          borderBottom: `1px solid ${token.colorBorder}`,
+          padding: '0 16px', // Use 16px padding
+          flexShrink: 0
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <img 
+              src="/img/PMS-Logo-150x150.png" 
+              alt="PMS Logo" 
+              style={{ height: '40px', width: 'auto' }} 
+            />
+            <Title 
+              level={4} 
+              style={{ 
+                margin: 0, 
+                color: themeMode === 'dark' ? '#F3F4F6' : '#111827'
+              }}
+            >
+              {CONFIG.title}
+            </Title>
+          </div>
+          {headerControls}
+        </Header>
+        {/* END MODIFICATION */}
 
-            <Content style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-              {overviewContent}
-            </Content>
-          </>
-        ) : (
-          // ConditionSummaryPage renders its own Header + Content
-          <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><Spin size="large" /></div>}>
-            <ConditionSummaryPage />
-          </Suspense>
-        )}
+        <Content style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+          {overviewContent}
+        </Content>
       </Layout>
     </Layout>
   ));

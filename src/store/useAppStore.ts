@@ -41,8 +41,6 @@ interface AppState {
   preSwipeDefinitionExpression: string | null;
   mapInitialized: boolean;
 
-  // Swipe / LA polygon layers
-  currentPage: 'overview' | 'condition-summary';
   leftSwipeYear: number;
   rightSwipeYear: number;
   roadLayerVisible: boolean;
@@ -106,7 +104,6 @@ interface AppState {
   toggleChartSelection: (selection: ChartSelection, isMultiSelect: boolean) => void;
 
   // New actions for Task 13
-  setCurrentPage: (page: 'overview' | 'condition-summary') => void;
   setSwipeYears: (left: number, right: number) => void;
   updateLALayerVisibility: () => void;
   setLaLayersVisibility: (visible: boolean) => void;
@@ -142,8 +139,6 @@ const useAppStore = create<AppState>()(
         mapInitialized: false,
         roadLayerVisible: true,
         swipePanelAutoStart: false, 
-        // Task 13: initial state
-        currentPage: 'overview',
         leftSwipeYear: 2018,
         rightSwipeYear: 2025,
 
@@ -207,22 +202,6 @@ const useAppStore = create<AppState>()(
         setShowStats: (b) => set({ showStats: b }),
         setShowChart: (b) => set({ showChart: b, showFilters: b ? false : get().showFilters }),
         setShowSwipe: (b) => set({ showSwipe: b }),
-
-        // Task 13: actions
-        setCurrentPage: (page) => {
-          const state = get();
-          if (page === 'condition-summary') {
-            // Hide road layers and enable auto-start for swipe
-            state.hideRoadNetworkForSwipe();
-            set({ currentPage: page, swipePanelAutoStart: true, showSwipe: true });
-            // The single LA layer visibility is now managed by setLALayerVisible
-          } else {
-            // Restore road layers when leaving condition summary
-            state.restoreRoadNetworkVisibility();
-            // The single LA layer visibility is now managed by setLALayerVisible
-            set({ currentPage: page, swipePanelAutoStart: false });
-          }
-        },
         setRoadLayerVisibility: (visible) => {
           const { roadLayer, roadLayerSwipe } = get();
           if (roadLayer) roadLayer.visible = visible;
@@ -997,8 +976,8 @@ const useAppStore = create<AppState>()(
             activeKpi,
             leftSwipeYear,
             rightSwipeYear,
-            currentPage,
-            laLayerCache
+            laLayerCache,
+            showSwipe
           } = get();
           
           // Fast exit if cache not built yet
@@ -1008,7 +987,7 @@ const useAppStore = create<AppState>()(
           }
           
           const startTime = performance.now();
-          const shouldShow = currentPage === 'condition-summary';
+          const shouldShow = showSwipe;
           
           // Build keys for layers that should be visible
           const leftKey = `${activeKpi}_${leftSwipeYear}_average`;

@@ -161,6 +161,58 @@ export default class QueryService {
   }
 
   /**
+   * Queries routes filtered by selected Local Authorities.
+   * If no LAs are selected, returns all routes.
+   * If LAs are selected, returns only routes within those LAs.
+   * @param layer - Feature layer to query
+   * @param selectedLAs - Array of selected Local Authority names
+   * @returns Promise with array of route names, sorted alphabetically
+   */
+  static async queryRoutesForLAs(
+    layer: __esri.FeatureLayer | null,
+    selectedLAs: string[]
+  ): Promise<string[]> {
+    if (!layer) {
+      console.warn('Cannot query routes: layer is null');
+      return [];
+    }
+
+    try {
+      // Build WHERE clause
+      let whereClause = '1=1';
+      if (selectedLAs && selectedLAs.length > 0) {
+        const laValues = selectedLAs.map(la => `'${la.replace("'", "''")}'`).join(', ');
+        whereClause = `${CONFIG.fields.la} IN (${laValues})`;
+      }
+
+      console.log(`[QueryService] Querying routes for LAs:`, selectedLAs.length > 0 ? selectedLAs : 'ALL');
+
+      const query = layer.createQuery();
+      query.where = whereClause;
+      query.outFields = [CONFIG.fields.route];
+      query.returnDistinctValues = true;
+      query.returnGeometry = false;
+      query.orderByFields = [CONFIG.fields.route];
+
+      const result = await layer.queryFeatures(query);
+
+      const routes = result.features
+        .map(feature => feature.attributes[CONFIG.fields.route])
+        .filter(value => value != null && value !== '');
+
+      // Sort alphabetically (case-insensitive)
+      routes.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+      console.log(`[QueryService] Found ${routes.length} routes`);
+      return routes;
+
+    } catch (error) {
+      console.error('Error querying routes for LAs:', error);
+      return [];
+    }
+  }
+
+  /**
    * Computes grouped statistics (e.g., average KPI by Local Authority).
    * @param layer - The FeatureLayer to query.
    * @param kpiField - The name of the KPI field to aggregate (e.g., 'roads_csv_iri_2025').

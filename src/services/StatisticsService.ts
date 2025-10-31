@@ -496,7 +496,7 @@ export default class StatisticsService {
           }
           
           if (subgroupOption.value === 'Rural') {
-            groupWhere = `${whereClause} AND (Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)`;
+            groupWhere = `${whereClause} AND (IsFormerNa = 0 AND IsDublin = 0 AND IsCityTown = 0 AND IsPeat = 0)`;
           } else {
             groupWhere = `${whereClause} AND ${subgroupOption.value} = 1`;
           }
@@ -746,7 +746,7 @@ export default class StatisticsService {
     
     if (subgroupOption) {
       if (subgroupOption.value === 'Rural') {
-        return '(Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)';
+        return '(IsFormerNa = 0 AND IsDublin = 0 AND IsCityTown = 0 AND IsPeat = 0)';
       } else {
         return `${subgroupOption.value} = 1`;
       }

@@ -203,11 +203,6 @@ const App: React.FC = () => {
           alignItems: 'center',
           justifyContent: 'center'
         }}>
-          <img src="/img/RMO_Logo.png" alt="RMO Logo" style={{ 
-            height: '100%',
-            transition: 'all 0.3s ease',
-            maxWidth: siderHovered ? '70%' : '32px' 
-          }} />
         </div>
 
         {/* Sider navigation with conditional text */}
@@ -262,6 +257,12 @@ const App: React.FC = () => {
               padding: '0 16px',
               flexShrink: 0
             }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img 
+                src="/img/PMS-Logo-150x150.png" 
+                alt="PMS Logo" 
+                style={{ height: '40px', width: 'auto' }} 
+              />
               <Title 
                 level={4} 
                 style={{ 
@@ -271,6 +272,7 @@ const App: React.FC = () => {
               >
                 {CONFIG.title}
               </Title>
+              </div>
               {headerControls}
             </Header>
 

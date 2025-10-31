@@ -42,8 +42,8 @@ const buildSubgroupWhereClause = (subgroup: string): string => {
 };
 
 const buildConditionWhereClause = (
-  kpiField: string,
   kpi: KPIKey,
+  year: number,
   conditionClass: string
 ): string => {
   const classValue = {
@@ -55,18 +55,18 @@ const buildConditionWhereClause = (
   }[conditionClass];
 
   if (classValue) {
-    const classFieldName = getKPIFieldName(kpi, 2025, true).replace('_2025', ''); // Get base class field name
+    const classFieldName = getKPIFieldName(kpi, year, true);
     return `${classFieldName} = ${classValue}`;
   }
   return '1=1';
 };
 
 const EnhancedChartPanel: React.FC = React.memo(() => {
-  const { 
-    roadLayer, 
-    activeKpi, 
-    currentFilters, 
-    mapView, 
+  const {
+    roadLayer,
+    activeKpi,
+    currentFilters,
+    mapView,
     setFilters,
     chartSelections,
     isChartFilterActive,
@@ -78,6 +78,7 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
   const previousDefinitionExpression = useRef<string>('1=1');
+  const renderCount = useRef(0);
 
   const [groupBy, setGroupBy] = useState<string>(CONFIG.defaultGroupBy);
   const [groupedData, setGroupedData] = useState<GroupedConditionStats[]>([]);
@@ -87,6 +88,10 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
   const [selectedSegment, setSelectedSegment] = useState<{group: string, condition: string} | null>(null);
   const [dataStatus, setDataStatus] = useState<'loading' | 'success' | 'no-data' | 'error'>('loading');
   const [errorDetails, setErrorDetails] = useState<string>('');
+
+  // Track renders for performance monitoring
+  renderCount.current += 1;
+  console.log(`[Chart Render] #${renderCount.current}`);
 
   // Get theme-aware colors
   const themeColors = useMemo(() => 
@@ -277,26 +282,26 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
     
     const whereClauses = selections.map(selection => {
       const year = selection.year;
-      const kpiField = getKPIFieldName(selection.kpi, year);
-      
+
       let groupClause = '';
       if (groupBy === 'subgroup') {
         groupClause = buildSubgroupWhereClause(selection.group);
       } else {
         groupClause = `${groupBy} = '${selection.group.replace("'", "''")}'`;
       }
-      
-      const conditionClause = buildConditionWhereClause(kpiField, selection.kpi, selection.condition);
-      
+
+      const conditionClause = buildConditionWhereClause(selection.kpi, year, selection.condition);
+
       return `(${groupClause} AND ${conditionClause})`;
     });
 
     let combinedWhere = whereClauses.join(' OR ');
-    
+
     if (previousDefinitionExpression.current !== '1=1') {
       combinedWhere = `(${previousDefinitionExpression.current}) AND (${combinedWhere})`;
     }
 
+    console.log('[Chart Filter] Applying WHERE clause:', combinedWhere);
     (roadLayer as any).definitionExpression = combinedWhere;
     
     try {
@@ -494,22 +499,39 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
     return config;
   }, [groupedData, chartDatasets, activeKpi, groupBy, stackedMode, selectedSegment, handleChartClick, token]);
 
-  // Render chart - now depends on themeMode to trigger re-render
+  // Initialize or update chart
   useEffect(() => {
     if (!chartRef.current || dataStatus !== 'success' || !groupedData.length) return;
 
-    if (chartInstance.current) {
-      chartInstance.current.destroy();
-    }
-    chartInstance.current = new Chart(chartRef.current, chartConfig);
+    // Create chart instance only once
+    if (!chartInstance.current) {
+      console.log('[Chart Init] Creating new chart instance');
+      chartInstance.current = new Chart(chartRef.current, chartConfig);
+    } else {
+      // Update existing chart in-place
+      console.log('[Chart Update] Updating chart in-place');
 
+      // Update data
+      chartInstance.current.data = chartConfig.data;
+
+      // Update options
+      chartInstance.current.options = chartConfig.options as any;
+
+      // Update without animation for instant feedback
+      chartInstance.current.update('none');
+    }
+  }, [dataStatus, groupedData, chartConfig]);
+
+  // Cleanup only on unmount
+  useEffect(() => {
     return () => {
       if (chartInstance.current) {
+        console.log('[Chart Cleanup] Destroying chart instance');
         chartInstance.current.destroy();
         chartInstance.current = null;
       }
     };
-  }, [dataStatus, groupedData, chartConfig]);
+  }, []);
 
   return (
     <Card 

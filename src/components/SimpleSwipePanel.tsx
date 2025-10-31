@@ -77,16 +77,25 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
    * Stops the swipe widget, hides layers, and cleans up.
    */
   const stopSwipe = useCallback(() => {
-    if (swipeWidget && view) {
-      // Hide layers that were being compared
-      [...swipeWidget.leadingLayers, ...swipeWidget.trailingLayers].forEach(layer => {
-        if (layer) (layer as Layer).visible = false;
+    if (swipeWidget && view) {      // START MODIFICATION
+      // Hide layers and reset opacity
+      swipeWidget.leadingLayers.forEach(layer => {
+        if(layer) {
+          layer.visible = false;
+          layer.opacity = 0.7; // Reset opacity
+        }
       });
+      swipeWidget.trailingLayers.forEach(layer => {
+        if(layer) {
+          layer.visible = false;
+          layer.opacity = 0.7; // Reset opacity
+        }
+      });
+      // END MODIFICATION
       view.ui.remove(swipeWidget);
       swipeWidget.destroy();
-      exitSwipeMode();
+      exitSwipeMode(); // This store call now handles roadLayer visibility
       setSwipeWidget(null);
-      useAppStore.setState({ isSwipeActive: false });
       message.info('Layer comparison deactivated');
     }
   }, [swipeWidget, view, exitSwipeMode]);
@@ -124,6 +133,10 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
         return;
       }
       
+      // START MODIFICATION
+      // This call now handles hiding the road network and setting isSwipeActive
+      enterSwipeMode(); 
+      
       // Hide all LA layers first
       if (laLayerCache) {
         laLayerCache.forEach((layer: FeatureLayer) => {
@@ -131,9 +144,12 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
         });
       }
       
-      // Make comparison layers visible
+      // Make comparison layers visible and set full opacity
       leftLayer.visible = true;
+      leftLayer.opacity = 1.0;
       rightLayer.visible = true;
+      rightLayer.opacity = 1.0;
+      // END MODIFICATION
       
       // Create swipe widget
       const swipe = new Swipe({
@@ -141,13 +157,12 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
         leadingLayers: [leftLayer],
         trailingLayers: [rightLayer],
         direction,
-        position
+        position,
+        id: 'rmo-swipe-widget' // ADDED ID
       });
       
       view.ui.add(swipe);
       setSwipeWidget(swipe);
-      enterSwipeMode();
-      useAppStore.setState({ isSwipeActive: true });
       setSwipeYears(leftYear, rightYear);
       
       message.success('Layer comparison activated');

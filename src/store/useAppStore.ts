@@ -114,6 +114,7 @@ interface AppState {
   setLALayerVisible: (visible: boolean) => void;
   setLAMetricType: (metricType: LAMetricType) => void;
   updateLALayerRenderer: () => void;
+  updateLASwipeLayers: (kpi: KPIKey) => void;
   enterSwipeMode: () => void;
   exitSwipeMode: () => void;
 }
@@ -247,6 +248,10 @@ const useAppStore = create<AppState>()(
           set({ activeKpi: k });
           get().updateRenderer();
           get().calculateStatistics();
+          // If in swipe mode, update LA layers too
+          if (get().isSwipeActive) {
+            get().updateLASwipeLayers(k);
+          }
           // Optionally ensure LA layers reflect KPI change:
           get().updateLALayerVisibility();
         },
@@ -455,8 +460,12 @@ const useAppStore = create<AppState>()(
         enterSwipeMode: () => {
           const { roadLayer } = get();
           if (roadLayer) {
-            set({ preSwipeDefinitionExpression: (roadLayer as any).definitionExpression || '1=1' });
+            set({ 
+              preSwipeDefinitionExpression: (roadLayer as any).definitionExpression || '1=1',
+              isSwipeActive: true // Set active flag here
+            });
           }
+          get().hideRoadNetworkForSwipe();
         },
 
         /**
@@ -466,11 +475,14 @@ const useAppStore = create<AppState>()(
         exitSwipeMode: () => {
           const { roadLayer, preSwipeDefinitionExpression } = get();
           if (roadLayer) {
-            (roadLayer as any).definitionExpression = preSwipeDefinitionExpression || '1=1';
-            // Make the layer visible only if a filter was active before swiping
-            roadLayer.visible = preSwipeDefinitionExpression !== '1=1';
+            (roadLayer as any).definitionExpression = preSwipeDefinitionExpression || '1=1'; // Restore filter
+            roadLayer.visible = true; // Ensure road layer visibility is restored
           }
-          set({ preSwipeDefinitionExpression: null });
+          set({ 
+            preSwipeDefinitionExpression: null,
+            isSwipeActive: false // Clear active flag here
+          });
+          get().restoreRoadNetworkVisibility();
         },
 
         initializeMap: async (containerId: string) => {
@@ -1063,6 +1075,47 @@ const useAppStore = create<AppState>()(
             console.log(' LA layer renderer updated successfully');
           } catch (error) {
             console.error('Error updating LA layer renderer:', error);
+          }
+        },
+
+        /**
+         * Updates the LA layers in the swipe widget when KPI changes
+         */
+        updateLASwipeLayers: (kpi) => {
+          const { leftSwipeYear, rightSwipeYear, laLayerCache, mapView } = get();
+          
+          if (!mapView) return;
+          
+          // Find the swipe widget on the map view
+          const swipeWidget = mapView.ui.find('rmo-swipe-widget') as __esri.Swipe;
+          if (!swipeWidget) {
+            console.warn('[Swipe] updateLASwipeLayers: Swipe widget not found.');
+            return;
+          }
+
+          const leftKey = `${kpi.toLowerCase()}_${leftSwipeYear}_average`;
+          const rightKey = `${kpi.toLowerCase()}_${rightSwipeYear}_average`;
+
+          const leftLayer = laLayerCache.get(leftKey);
+          const rightLayer = laLayerCache.get(rightKey);
+
+          if (leftLayer && rightLayer) {
+            // Hide all LA layers first
+            laLayerCache.forEach(layer => layer.visible = false);
+
+            // Update swipe widget layers
+            swipeWidget.leadingLayers.removeAll();
+            swipeWidget.trailingLayers.removeAll();
+            swipeWidget.leadingLayers.add(leftLayer);
+            swipeWidget.trailingLayers.add(rightLayer);
+
+            // Ensure visibility and opacity
+            leftLayer.visible = true;
+            rightLayer.visible = true;
+            
+            console.log(`[Swipe] Updated swipe layers for ${kpi}`);
+          } else {
+            console.warn(`[Swipe] Could not find LA layers for ${kpi}: ${leftKey}, ${rightKey}`);
           }
         },
       }),

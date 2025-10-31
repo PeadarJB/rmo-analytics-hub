@@ -589,58 +589,86 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
         </Space>
       }
     >
-      {loading && (
-        <div style={{ textAlign: 'center', padding: '50px 0' }}>
-          <Spin size="large" />
-          <div style={{ marginTop: '12px', color: token.colorText }}>Loading chart data...</div>
-        </div>
-      )}
+      <div style={{ position: 'relative', minHeight: '700px' }}>
 
-      {dataStatus === 'error' && (
-        <Alert 
-          message="Chart Loading Error" 
-          description={`Failed to load ${KPI_LABELS[activeKpi]} data: ${errorDetails}`}
-          type="error" 
-          showIcon 
-          style={{ margin: '20px' }}
-        />
-      )}
+        {/* --- STATE OVERLAYS (Spinner/Alerts) --- */}
+        {/* This div will overlay on top of the chart canvas */}
+        {(loading || dataStatus === 'error' || dataStatus === 'no-data') && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10,
+            // Add a semi-transparent background to dim the chart
+            backgroundColor: themeMode === 'dark' ? 'rgba(31, 41, 55, 0.7)' : 'rgba(255, 255, 255, 0.7)',
+            backdropFilter: 'blur(2px)',
+            padding: '20px'
+          }}>
 
-      {dataStatus === 'no-data' && (
-        <Alert 
-          message="No Chart Data Available" 
-          description={errorDetails}
-          type="info" 
-          showIcon 
-          style={{ margin: '20px' }}
-          action={
-            <Button 
-              size="small" 
-              onClick={() => window.location.reload()}
-            >
-              Refresh
-            </Button>
-          }
-        />
-      )}
-      
-      {!loading && dataStatus === 'success' && groupedData.length > 0 && (
-        <>
-          <div style={{ position: 'relative', height: '700px' }}>
-            <canvas ref={chartRef} />
+            {loading && (
+              <div style={{ textAlign: 'center' }}>
+                <Spin size="large" />
+                <div style={{ marginTop: '12px', color: token.colorText }}>Loading chart data...</div>
+              </div>
+            )}
+
+            {dataStatus === 'error' && (
+              <Alert
+                message="Chart Loading Error"
+                description={`Failed to load ${KPI_LABELS[activeKpi]} data: ${errorDetails}`}
+                type="error"
+                showIcon
+              />
+            )}
+
+            {dataStatus === 'no-data' && (
+              <Alert
+                message="No Chart Data Available"
+                description={errorDetails}
+                type="info"
+                showIcon
+                action={
+                  <Button
+                    size="small"
+                    onClick={() => window.location.reload()}
+                  >
+                    Refresh
+                  </Button>
+                }
+              />
+            )}
           </div>
-          {stackedMode && (
-            <div style={{
-              marginTop: '8px',
-              fontSize: '12px',
-              color: token.colorTextSecondary,
-              textAlign: 'center'
-            }}>
-              Click to select • Ctrl+Click for multiple selections • Click again to deselect
-            </div>
-          )}
-        </>
-      )}
+        )}
+
+        {/* --- CHART CONTAINER --- */}
+        {/* This container is now ALWAYS rendered */}
+        <div style={{
+          position: 'relative',
+          height: '700px',
+          // Hide the container if data isn't ready, but don't unmount it
+          visibility: (dataStatus === 'success' && groupedData.length > 0) ? 'visible' : 'hidden'
+        }}>
+          <canvas ref={chartRef} />
+        </div>
+
+        {/* --- FOOTER TEXT --- */}
+        {/* Conditionally render this text */}
+        {stackedMode && !loading && dataStatus === 'success' && groupedData.length > 0 && (
+          <div style={{
+            marginTop: '8px',
+            fontSize: '12px',
+            color: token.colorTextSecondary,
+            textAlign: 'center'
+          }}>
+            Click to select • Ctrl+Click for multiple selections • Click again to deselect
+          </div>
+        )}
+      </div>
     </Card>
   );
 });

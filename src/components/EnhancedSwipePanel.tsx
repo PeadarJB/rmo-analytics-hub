@@ -175,16 +175,8 @@ const EnhancedSwipePanel: FC = () => {
 
   // Check availability
   const isFairOrBetterAvailable = useMemo(() => {
-    return leftSwipeYear === 2025 && rightSwipeYear === 2025;
-  }, [leftSwipeYear, rightSwipeYear]);
-
-  // Auto-switch if not available
-  useEffect(() => {
-    if (laMetricType === 'fairOrBetter' && !isFairOrBetterAvailable) {
-      setLAMetricType('average');
-      message.info('Switched to Average Values (Fair or Better only for 2025)');
-    }
-  }, [laMetricType, isFairOrBetterAvailable, setLAMetricType]);
+    return true; // Always allow "Fair or Better"
+  }, []);
 
   return (
     <div className={styles.filterPanel}>
@@ -249,12 +241,11 @@ const EnhancedSwipePanel: FC = () => {
                     </Text>
                   </Space>
                 </Radio>
-                <Radio value="fairOrBetter" disabled={!isFairOrBetterAvailable}>
+                <Radio value="fairOrBetter">
                   <Space direction="vertical" size={0}>
                     <Text>Fair or Better %</Text>
                     <Text type="secondary" style={{ fontSize: '12px' }}>
                       % of roads in acceptable condition
-                      {!isFairOrBetterAvailable && ' (Only for 2025 vs 2025)'}
                     </Text>
                   </Space>
                 </Radio>

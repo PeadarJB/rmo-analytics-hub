@@ -516,7 +516,7 @@ const useAppStore = create<AppState>()(
 
             // Find single LA polygon layer
             const laLayer = webmap.allLayers.find(
-              (l: any) => l.title === 'RMO LA Data'
+              (l: any) => l.title === CONFIG.laPolygonLayerTitle // Use the config variable
             ) as FeatureLayer | undefined;
 
             if (laLayer) {

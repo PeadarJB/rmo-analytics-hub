@@ -107,7 +107,7 @@ interface AppState {
   setLALayer: (layer: __esri.FeatureLayer | null) => void;
   setLALayerVisible: (visible: boolean) => void;
   setLAMetricType: (metricType: LAMetricType) => void;
-  updateLALayerRenderer: () => void;
+  updateLALayerRenderer: () => Promise<void>;  // Now async
   enterSwipeMode: () => void;
   exitSwipeMode: () => void;
 }
@@ -188,8 +188,8 @@ const useAppStore = create<AppState>()(
           }
     
           // NEW: Update LA layer renderer when theme changes
-          updateLALayerRenderer();
-    
+          void updateLALayerRenderer();  // Fire-and-forget async call
+
           console.log('Theme mode changed to:', mode);
         },
 
@@ -223,7 +223,7 @@ const useAppStore = create<AppState>()(
           get().updateRenderer();
           get().calculateStatistics();
           // Update LA layer renderer when KPI changes
-          get().updateLALayerRenderer();
+          void get().updateLALayerRenderer();  // Fire-and-forget async call
         },
 
         setFilters: (f) => {
@@ -274,9 +274,9 @@ const useAppStore = create<AppState>()(
               // Use createRenderer as requested
               const renderer = RendererService.createRenderer(activeKpi, year, themeMode, true);
               roadLayer.renderer = renderer;
-              
+
               // NEW: Update LA layer renderer when year changes
-              updateLALayerRenderer();
+              void updateLALayerRenderer();  // Fire-and-forget async call
             }
           }
         },
@@ -889,7 +889,7 @@ const useAppStore = create<AppState>()(
           // Apply initial renderer if layer exists
           if (layer) {
             const { updateLALayerRenderer } = get();
-            updateLALayerRenderer();
+            void updateLALayerRenderer();  // Fire-and-forget async call
           }
         },
 
@@ -912,10 +912,10 @@ const useAppStore = create<AppState>()(
          */
         setLAMetricType: (metricType: LAMetricType) => {
           set({ laMetricType: metricType });
-          
+
           // Update renderer when metric type changes
           const { updateLALayerRenderer } = get();
-          updateLALayerRenderer();
+          void updateLALayerRenderer();  // Fire-and-forget async call
         },
 
         setSwipeYears: (left, right) => {
@@ -924,10 +924,11 @@ const useAppStore = create<AppState>()(
 
         /**
          * Update LA layer renderer based on current KPI, year, and metric type
+         * MODIFIED: Now async to support dynamic max value queries
          */
-        updateLALayerRenderer: () => {
+        updateLALayerRenderer: async () => {
           const { laLayer, activeKpi, currentFilters, laMetricType, themeMode } = get();
-          
+
           if (!laLayer) {
             console.warn('Cannot update renderer: LA layer not set');
             return;
@@ -936,15 +937,22 @@ const useAppStore = create<AppState>()(
           const year = currentFilters.year || CONFIG.defaultYear;
 
           console.log(`Updating LA renderer: ${activeKpi}/${year}/${laMetricType}/${themeMode}`);
-          
+
           try {
-            // Create renderer using LARendererService
-            const renderer = LARendererService.createLARenderer(activeKpi, year, laMetricType, themeMode);
-            
+            // Create renderer using LARendererService with continuous gradient
+            // Pass the layer to enable max value queries for dynamic scaling
+            const renderer = await LARendererService.createLARenderer(
+              activeKpi,
+              year,
+              laMetricType,
+              themeMode,
+              laLayer
+            );
+
             // Apply renderer to layer
             laLayer.renderer = renderer;
-            
-            console.log(' LA layer renderer updated successfully');
+
+            console.log('✓ LA layer renderer updated with continuous gradient');
           } catch (error) {
             console.error('Error updating LA layer renderer:', error);
           }

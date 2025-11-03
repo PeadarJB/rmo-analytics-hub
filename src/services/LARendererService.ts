@@ -1,6 +1,11 @@
+// src/services/LARendererService.ts
+// MODIFIED VERSION - Implements continuous gradients using SimpleRenderer with visual variables
+
+import SimpleRenderer from '@arcgis/core/renderers/SimpleRenderer';
 import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';
 import SimpleFillSymbol from '@arcgis/core/symbols/SimpleFillSymbol';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';
+import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import {
   LAMetricType,
   LA_FIELD_PATTERNS,
@@ -12,11 +17,14 @@ import { KPIKey, KPI_THRESHOLDS } from '@/config/kpiConfig';
 /**
  * Service for creating ArcGIS renderers for LA polygon layers
  * Supports two visualization modes:
- * - Average: Shows county average KPI values with threshold-based breaks
+ * - Average: Shows county average KPI values with continuous gradient
  * - Fair or Better: Shows percentage of roads in acceptable condition with continuous gradient
+ *
+ * MODIFIED: Now uses SimpleRenderer with visual variables for true continuous gradients
  */
 export default class LARendererService {
-  private static rendererCache = new Map<string, ClassBreaksRenderer>();
+  private static rendererCache = new Map<string, SimpleRenderer | ClassBreaksRenderer>();
+  private static maxValueCache = new Map<string, number>();
 
   /**
    * Generate cache key for renderer
@@ -31,19 +39,93 @@ export default class LARendererService {
   }
 
   /**
+   * Generate cache key for max value queries
+   */
+  private static getMaxValueCacheKey(kpi: KPIKey, year: number, metricType: LAMetricType): string {
+    return `max_${kpi}_${year}_${metricType}`;
+  }
+
+  /**
+   * Query the LA layer to get the maximum value for a field
+   * Used to dynamically set the upper bound of the gradient
+   */
+  private static async queryMaxValue(
+    layer: FeatureLayer,
+    fieldName: string,
+    kpi: KPIKey,
+    year: number,
+    metricType: LAMetricType
+  ): Promise<number> {
+    const cacheKey = this.getMaxValueCacheKey(kpi, year, metricType);
+
+    // Check cache first
+    if (this.maxValueCache.has(cacheKey)) {
+      console.log(`✓ Using cached max value for ${cacheKey}: ${this.maxValueCache.get(cacheKey)}`);
+      return this.maxValueCache.get(cacheKey)!;
+    }
+
+    try {
+      const query = layer.createQuery();
+      query.where = `${fieldName} IS NOT NULL`;
+      query.outStatistics = [{
+        onStatisticField: fieldName,
+        outStatisticFieldName: 'maxValue',
+        statisticType: 'max'
+      }] as any;
+
+      const result = await layer.queryFeatures(query);
+
+      if (result.features.length > 0 && result.features[0].attributes.maxValue != null) {
+        const maxValue = result.features[0].attributes.maxValue;
+        console.log(`✓ Queried max value for ${fieldName}: ${maxValue}`);
+
+        // Cache the result
+        this.maxValueCache.set(cacheKey, maxValue);
+        return maxValue;
+      }
+    } catch (error) {
+      console.error(`Error querying max value for ${fieldName}:`, error);
+    }
+
+    // Fallback to configured max if query fails
+    const fallback = metricType === 'fairOrBetter'
+      ? LA_PERCENTAGE_RANGES[kpi].max
+      : this.getDefaultMaxForAverage(kpi);
+    console.warn(`Using fallback max value: ${fallback}`);
+    return fallback;
+  }
+
+  /**
+   * Get default max value for average mode based on KPI thresholds
+   */
+  private static getDefaultMaxForAverage(kpi: KPIKey): number {
+    // Use a reasonable maximum based on KPI characteristics
+    if (kpi === 'iri' || kpi === 'lpv3') return 10; // Roughness metrics
+    if (kpi === 'rut') return 30; // Rut depth
+    if (kpi === 'csc') return 0.7; // Skid resistance
+    if (kpi === 'mpd') return 1.5; // Texture depth
+    if (kpi === 'psci') return 10; // Visual condition
+    return 100; // Generic fallback
+  }
+
+  /**
    * Main entry point: Create renderer based on mode
+   * Now returns SimpleRenderer for continuous gradients
+   *
    * @param kpi - The KPI to visualize
    * @param year - Survey year (2011, 2018, 2025)
    * @param metricType - Visualization mode ('average' or 'fairOrBetter')
    * @param themeMode - Current theme for outline colors
-   * @returns ClassBreaksRenderer configured for the LA layer
+   * @param layer - The LA FeatureLayer (needed to query max values for 2025 data)
+   * @returns SimpleRenderer with continuous gradient
    */
-  static createLARenderer(
+  static async createLARenderer(
     kpi: KPIKey,
     year: number,
     metricType: LAMetricType,
-    themeMode: 'light' | 'dark'
-  ): ClassBreaksRenderer {
+    themeMode: 'light' | 'dark',
+    layer: FeatureLayer
+  ): Promise<SimpleRenderer | ClassBreaksRenderer> {
     // Check cache
     const cacheKey = this.getCacheKey(kpi, year, metricType, themeMode);
     const cached = this.rendererCache.get(cacheKey);
@@ -52,12 +134,12 @@ export default class LARendererService {
       return cached;
     }
 
-    console.log(`Creating LA renderer: ${kpi}/${year}/${metricType}`);
+    console.log(`Creating LA renderer with continuous gradient: ${kpi}/${year}/${metricType}`);
 
     // Delegate to mode-specific method
     const renderer = metricType === 'fairOrBetter'
-      ? this.createFairOrBetterRenderer(kpi, year, themeMode)
-      : this.createAverageValueRenderer(kpi, year, themeMode);
+      ? await this.createFairOrBetterRenderer(kpi, year, themeMode, layer)
+      : await this.createAverageValueRenderer(kpi, year, themeMode, layer);
 
     // Cache and return
     this.rendererCache.set(cacheKey, renderer);
@@ -66,285 +148,128 @@ export default class LARendererService {
 
   /**
    * MODE A: Fair or Better percentage renderer
-   * Uses continuous gradient across KPI-specific percentage range
+   * Uses SimpleRenderer with visual variables for continuous gradient
+   * Min value from 2019 report, Max value queried from 2025 data
    */
-  private static createFairOrBetterRenderer(
+  private static async createFairOrBetterRenderer(
     kpi: KPIKey,
     year: number,
-    themeMode: 'light' | 'dark'
-  ): ClassBreaksRenderer {
+    themeMode: 'light' | 'dark',
+    layer: FeatureLayer
+  ): Promise<SimpleRenderer> {
     const fieldName = LA_FIELD_PATTERNS.fairOrBetter(kpi, year);
-    const range = LA_PERCENTAGE_RANGES[kpi];
     const colors = LA_COLOR_GRADIENTS[kpi];
 
-    const renderer = new ClassBreaksRenderer({
-      field: fieldName,
-      defaultSymbol: this.createFillSymbol([200, 200, 200], themeMode),
-      defaultLabel: 'No Data'
-    });
+    // Get min from 2019 report configuration
+    const minValue = LA_PERCENTAGE_RANGES[kpi].min;
+
+    // Query max from 2025 data (only for year 2025)
+    const maxValue = year === 2025
+      ? await this.queryMaxValue(layer, fieldName, kpi, year, 'fairOrBetter')
+      : LA_PERCENTAGE_RANGES[kpi].max;
+
+    console.log(`Fair or Better gradient for ${kpi}: ${minValue}% - ${maxValue}%`);
 
     // MPD is inverse (shows % POOR, not % Fair-or-Better)
-    if (kpi === 'mpd') {
-      this.createContinuousBreaks(
-        renderer,
-        colors,
-        range.min,
-        range.max,
-        10,
-        true  // inverse colors for MPD
-      );
-    } else {
-      this.createContinuousBreaks(
-        renderer,
-        colors,
-        range.min,
-        range.max,
-        10,
-        false
-      );
-    }
+    const isInverse = kpi === 'mpd';
+    const startColor = isInverse ? colors.veryGood : colors.veryPoor;
+    const endColor = isInverse ? colors.veryPoor : colors.veryGood;
 
-    return renderer;
+    return new SimpleRenderer({
+      symbol: this.createFillSymbol([128, 128, 128], themeMode), // Default gray for no data
+      visualVariables: [{
+        type: 'color',
+        field: fieldName,
+        stops: [
+          {
+            value: minValue,
+            color: [...startColor, 255] as any,  // Full opacity
+            label: `${minValue.toFixed(0)}%`
+          },
+          {
+            value: maxValue,
+            color: [...endColor, 255] as any,  // Full opacity
+            label: `${maxValue.toFixed(0)}%`
+          }
+        ]
+      }] as any
+    });
   }
 
   /**
    * MODE B: Average values renderer
-   * Uses threshold-based color breaks
+   * Uses SimpleRenderer with visual variables for continuous gradient
+   * Max value queried from 2025 data
    */
-  private static createAverageValueRenderer(
+  private static async createAverageValueRenderer(
     kpi: KPIKey,
     year: number,
-    themeMode: 'light' | 'dark'
-  ): ClassBreaksRenderer {
+    themeMode: 'light' | 'dark',
+    layer: FeatureLayer
+  ): Promise<SimpleRenderer> {
     const fieldName = LA_FIELD_PATTERNS.average(kpi, year);
     const thresholds = KPI_THRESHOLDS[kpi];
     const colors = LA_COLOR_GRADIENTS[kpi];
 
-    const renderer = new ClassBreaksRenderer({
-      field: fieldName,
-      defaultSymbol: this.createFillSymbol([200, 200, 200], themeMode),
-      defaultLabel: 'No Data'
-    });
-
-    // Handle KPI-specific class counts
-    if (kpi === 'psci') {
-      // PSCI: 4 classes only (9-10, 7-8, 5-6, 1-4)
-      this.applyPSCIBreaks(renderer, colors, themeMode);
-    } else if (kpi === 'mpd') {
-      // MPD: 3 classes only (Good, Fair, Poor)
-      this.applyMPDBreaks(renderer, colors, thresholds, themeMode);
-    } else {
-      // Standard 5 classes
-      this.applyThresholdBreaks(renderer, colors, thresholds, kpi, themeMode);
-    }
-
-    return renderer;
-  }
-
-  /**
-   * Helper: Create continuous gradient classes
-   */
-  private static createContinuousBreaks(
-    renderer: ClassBreaksRenderer,
-    colors: Record<string, [number, number, number]>,
-    min: number,
-    max: number,
-    numClasses: number = 10,
-    inverse: boolean = false
-  ): void {
-    const range = max - min;
-    const step = range / numClasses;
-
-    // Get color endpoints
-    const startColor = inverse ? colors.veryGood : colors.veryPoor;
-    const endColor = inverse ? colors.veryPoor : colors.veryGood;
-
-    for (let i = 0; i < numClasses; i++) {
-      const minValue = min + (i * step);
-      const maxValue = min + ((i + 1) * step);
-      
-      // Interpolate color
-      const t = i / (numClasses - 1);
-      const r = Math.round(startColor[0] + t * (endColor[0] - startColor[0]));
-      const g = Math.round(startColor[1] + t * (endColor[1] - startColor[1]));
-      const b = Math.round(startColor[2] + t * (endColor[2] - startColor[2]));
-
-      renderer.addClassBreakInfo({
-        minValue: minValue,
-        maxValue: maxValue,
-        symbol: this.createFillSymbol([r, g, b], 'light'),
-        label: `${minValue.toFixed(0)}% - ${maxValue.toFixed(0)}%`
-      });
-    }
-  }
-
-  /**
-   * Helper: Apply threshold-based breaks (5 classes)
-   */
-  private static applyThresholdBreaks(
-    renderer: ClassBreaksRenderer,
-    colors: Record<string, [number, number, number]>,
-    thresholds: any,
-    kpi: KPIKey,
-    themeMode: 'light' | 'dark'
-  ): void {
-    // Determine directionality
+    // Determine min and max based on KPI directionality
     const isLowerBetter = kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3';
-    const isHigherBetter = kpi === 'csc';
+
+    let minValue: number;
+    let maxValue: number;
 
     if (isLowerBetter) {
-      // Lower is better: IRI, Rut, LPV
-      // Very Good (darkest) = lowest values
-      // Very Poor (lightest) = highest values
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: thresholds.veryGood || thresholds.good,
-        symbol: this.createFillSymbol(colors.veryGood, themeMode),
-        label: 'Very Good'
-      });
-      renderer.addClassBreakInfo({
-        minValue: thresholds.veryGood || thresholds.good,
-        maxValue: thresholds.good,
-        symbol: this.createFillSymbol(colors.good, themeMode),
-        label: 'Good'
-      });
-      renderer.addClassBreakInfo({
-        minValue: thresholds.good,
-        maxValue: thresholds.fair,
-        symbol: this.createFillSymbol(colors.fair, themeMode),
-        label: 'Fair'
-      });
-      renderer.addClassBreakInfo({
-        minValue: thresholds.fair,
-        maxValue: thresholds.poor || 999,
-        symbol: this.createFillSymbol(colors.poor, themeMode),
-        label: 'Poor'
-      });
-      renderer.addClassBreakInfo({
-        minValue: thresholds.poor || thresholds.fair,
-        maxValue: 9999,
-        symbol: this.createFillSymbol(colors.veryPoor, themeMode),
-        label: 'Very Poor'
-      });
-    } else if (isHigherBetter) {
-      // Higher is better: CSC
-      // Very Good (lightest) = highest values
-      // Very Poor (darkest) = lowest values
-      renderer.addClassBreakInfo({
-        minValue: thresholds.good,
-        maxValue: 999,
-        symbol: this.createFillSymbol(colors.veryGood, themeMode),
-        label: 'Very Good'
-      });
-      renderer.addClassBreakInfo({
-        minValue: thresholds.fair,
-        maxValue: thresholds.good,
-        symbol: this.createFillSymbol(colors.good, themeMode),
-        label: 'Good'
-      });
-      renderer.addClassBreakInfo({
-        minValue: thresholds.poor!,
-        maxValue: thresholds.fair,
-        symbol: this.createFillSymbol(colors.fair, themeMode),
-        label: 'Fair'
-      });
-      renderer.addClassBreakInfo({
-        minValue: thresholds.veryPoor!,
-        maxValue: thresholds.poor!,
-        symbol: this.createFillSymbol(colors.poor, themeMode),
-        label: 'Poor'
-      });
-      renderer.addClassBreakInfo({
-        minValue: 0,
-        maxValue: thresholds.veryPoor!,
-        symbol: this.createFillSymbol(colors.veryPoor, themeMode),
-        label: 'Very Poor'
-      });
+      // For "lower is better" KPIs, min is best (very good threshold), max is worst (query actual max)
+      minValue = thresholds.veryGood || thresholds.good || 0;
+      maxValue = year === 2025
+        ? await this.queryMaxValue(layer, fieldName, kpi, year, 'average')
+        : this.getDefaultMaxForAverage(kpi);
+    } else {
+      // For "higher is better" KPIs (csc, mpd, psci), min is worst, max is best (query actual max)
+      minValue = thresholds.poor || 0;
+      maxValue = year === 2025
+        ? await this.queryMaxValue(layer, fieldName, kpi, year, 'average')
+        : this.getDefaultMaxForAverage(kpi);
     }
-  }
 
-  /**
-   * Helper: Apply PSCI breaks (4 classes only)
-   * Classes: 9-10, 7-8, 5-6, 1-4
-   */
-  private static applyPSCIBreaks(
-    renderer: ClassBreaksRenderer,
-    colors: Record<string, [number, number, number]>,
-    themeMode: 'light' | 'dark'
-  ): void {
-    // PSCI uses 4 classes based on 2018 Regional Report
-    // Class 1: 9-10 (Very Good)
-    renderer.addClassBreakInfo({
-      minValue: 9,
-      maxValue: 10,
-      symbol: this.createFillSymbol(colors.veryGood, themeMode),
-      label: '9-10 (Very Good)'
-    });
-    // Class 2: 7-8 (Good)
-    renderer.addClassBreakInfo({
-      minValue: 7,
-      maxValue: 9,
-      symbol: this.createFillSymbol(colors.good, themeMode),
-      label: '7-8 (Good)'
-    });
-    // Class 3: 5-6 (Fair)
-    renderer.addClassBreakInfo({
-      minValue: 5,
-      maxValue: 7,
-      symbol: this.createFillSymbol(colors.fair, themeMode),
-      label: '5-6 (Fair)'
-    });
-    // Class 4: 1-4 (Poor) - combines Poor and Very Poor
-    renderer.addClassBreakInfo({
-      minValue: 1,
-      maxValue: 5,
-      symbol: this.createFillSymbol(colors.poor, themeMode),
-      label: '1-4 (Poor)'
-    });
-  }
+    console.log(`Average gradient for ${kpi}: ${minValue} - ${maxValue}`);
 
-  /**
-   * Helper: Apply MPD breaks (3 classes only)
-   * Classes: Good (≥0.7), Fair (0.6-0.7), Poor (<0.6)
-   */
-  private static applyMPDBreaks(
-    renderer: ClassBreaksRenderer,
-    colors: Record<string, [number, number, number]>,
-    thresholds: any,
-    themeMode: 'light' | 'dark'
-  ): void {
-    // MPD: Higher is better, 3 classes only
-    renderer.addClassBreakInfo({
-      minValue: thresholds.good,
-      maxValue: 999,
-      symbol: this.createFillSymbol(colors.good, themeMode),
-      label: 'Good (≥0.7)'
-    });
-    renderer.addClassBreakInfo({
-      minValue: thresholds.poor!,
-      maxValue: thresholds.good,
-      symbol: this.createFillSymbol(colors.fair, themeMode),
-      label: 'Fair (0.6-0.7)'
-    });
-    renderer.addClassBreakInfo({
-      minValue: 0,
-      maxValue: thresholds.poor!,
-      symbol: this.createFillSymbol(colors.poor, themeMode),
-      label: 'Poor (<0.6)'
+    // Set colors based on directionality
+    const startColor = isLowerBetter ? colors.veryGood : colors.veryPoor;
+    const endColor = isLowerBetter ? colors.veryPoor : colors.veryGood;
+
+    return new SimpleRenderer({
+      symbol: this.createFillSymbol([128, 128, 128], themeMode), // Default gray for no data
+      visualVariables: [{
+        type: 'color',
+        field: fieldName,
+        stops: [
+          {
+            value: minValue,
+            color: [...startColor, 255] as any,  // Full opacity
+            label: minValue.toFixed(2)
+          },
+          {
+            value: maxValue,
+            color: [...endColor, 255] as any,  // Full opacity
+            label: maxValue.toFixed(2)
+          }
+        ]
+      }] as any
     });
   }
 
   /**
    * Helper: Create fill symbol with theme-aware outline
+   * MODIFIED: Now uses full opacity (1.0) instead of 0.7
    */
   private static createFillSymbol(
     color: [number, number, number],
     themeMode: 'light' | 'dark'
   ): SimpleFillSymbol {
     const outlineColor = themeMode === 'dark' ? [100, 100, 100, 0.8] : [200, 200, 200, 0.8];
-    
+
     return new SimpleFillSymbol({
-      color: [...color, 0.7] as [number, number, number, number],
+      color: [...color, 255] as [number, number, number, number], // CHANGED: Full opacity (255/255 = 1.0)
       outline: new SimpleLineSymbol({
         color: outlineColor as [number, number, number, number],
         width: 0.5
@@ -358,15 +283,23 @@ export default class LARendererService {
   static clearCache(): void {
     console.log('Clearing LA renderer cache');
     this.rendererCache.clear();
+    this.maxValueCache.clear();
   }
 
   /**
    * Get cache statistics
    */
-  static getCacheStats(): { size: number; keys: string[] } {
+  static getCacheStats(): {
+    rendererCacheSize: number;
+    rendererKeys: string[];
+    maxValueCacheSize: number;
+    maxValueKeys: string[];
+  } {
     return {
-      size: this.rendererCache.size,
-      keys: Array.from(this.rendererCache.keys())
+      rendererCacheSize: this.rendererCache.size,
+      rendererKeys: Array.from(this.rendererCache.keys()),
+      maxValueCacheSize: this.maxValueCache.size,
+      maxValueKeys: Array.from(this.maxValueCache.keys())
     };
   }
 }

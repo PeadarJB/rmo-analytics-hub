@@ -298,7 +298,7 @@ export const LA_FILL_CONFIG = {
   /**
    * Fill opacity for LA polygons (0-1)
    */
-  fillOpacity: 0.7,
+  fillOpacity: 1,
   
   /**
    * Outline color for LA polygons

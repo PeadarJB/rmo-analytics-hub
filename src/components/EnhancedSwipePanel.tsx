@@ -74,6 +74,7 @@ const EnhancedSwipePanel: FC = () => {
 
   /**
    * Activates the swipe widget with current settings
+   * MODIFIED: Now awaits async cloneLALayer calls for continuous gradient support
    */
   const activateSwipe = useCallback(async () => {
     if (!mapView || !webmap || !laLayer) {
@@ -93,24 +94,30 @@ const EnhancedSwipePanel: FC = () => {
       laLayer.visible = false;
       enterSwipeMode();
 
-      // Create clones
-      const left = cloneLALayer(
-        laLayer,
-        activeKpi,
-        leftSwipeYear,
-        laMetricType,
-        themeMode,
-        `${activeKpi.toUpperCase()} ${leftSwipeYear}`
-      );
+      // Show loading message while creating layers with continuous gradients
+      const loadingKey = 'swipe-loading';
+      message.loading({ content: 'Preparing comparison layers...', key: loadingKey, duration: 0 });
 
-      const right = cloneLALayer(
-        laLayer,
-        activeKpi,
-        rightSwipeYear,
-        laMetricType,
-        themeMode,
-        `${activeKpi.toUpperCase()} ${rightSwipeYear}`
-      );
+      // Create clones in parallel for better performance
+      // Each clone queries max values from the data to create dynamic gradients
+      const [left, right] = await Promise.all([
+        cloneLALayer(
+          laLayer,
+          activeKpi,
+          leftSwipeYear,
+          laMetricType,
+          themeMode,
+          `${activeKpi.toUpperCase()} ${leftSwipeYear}`
+        ),
+        cloneLALayer(
+          laLayer,
+          activeKpi,
+          rightSwipeYear,
+          laMetricType,
+          themeMode,
+          `${activeKpi.toUpperCase()} ${rightSwipeYear}`
+        )
+      ]);
 
       // Add to map
       webmap.layers.add(left);
@@ -119,7 +126,7 @@ const EnhancedSwipePanel: FC = () => {
       setLeftClone(left);
       setRightClone(right);
 
-      // Wait for load
+      // Wait for layers to load
       await Promise.all([left.when(), right.when()]);
 
       // Create swipe
@@ -134,7 +141,8 @@ const EnhancedSwipePanel: FC = () => {
       mapView.ui.add(swipe);
       setSwipeWidget(swipe);
 
-      message.success(`Comparing ${leftSwipeYear} vs ${rightSwipeYear}`);
+      // Dismiss loading and show success
+      message.success({ content: `Comparing ${leftSwipeYear} vs ${rightSwipeYear}`, key: loadingKey, duration: 2 });
 
     } catch (error) {
       console.error('[Swipe] Error:', error);
@@ -145,6 +153,11 @@ const EnhancedSwipePanel: FC = () => {
       if (rightClone) removeClonedLayer(webmap!, rightClone);
       setLeftClone(null);
       setRightClone(null);
+
+      // Restore original layer visibility
+      if (laLayer) {
+        laLayer.visible = true;
+      }
       exitSwipeMode();
     }
   }, [mapView, webmap, laLayer, activeKpi, leftSwipeYear, rightSwipeYear, laMetricType, themeMode, direction, leftClone, rightClone, enterSwipeMode, exitSwipeMode]);

@@ -98,6 +98,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
   
   /**
    * Starts swipe mode with selected years
+   * MODIFIED: Now awaits async cloneLALayer calls for continuous gradient support
    */
   const startSwipe = async () => {
     if (!view || !webmap || !laLayer) {
@@ -117,24 +118,30 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       laLayer.visible = false;
       enterSwipeMode();
 
-      // Create clones
-      const left = cloneLALayer(
-        laLayer,
-        activeKpi,
-        leftYear,
-        laMetricType,
-        themeMode,
-        `${activeKpi.toUpperCase()} ${leftYear}`
-      );
+      // Show loading message while creating layers with continuous gradients
+      const loadingKey = 'swipe-loading';
+      message.loading({ content: 'Preparing comparison layers...', key: loadingKey, duration: 0 });
 
-      const right = cloneLALayer(
-        laLayer,
-        activeKpi,
-        rightYear,
-        laMetricType,
-        themeMode,
-        `${activeKpi.toUpperCase()} ${rightYear}`
-      );
+      // Create clones in parallel for better performance
+      // Each clone queries max values from the data to create dynamic gradients
+      const [left, right] = await Promise.all([
+        cloneLALayer(
+          laLayer,
+          activeKpi,
+          leftYear,
+          laMetricType,
+          themeMode,
+          `${activeKpi.toUpperCase()} ${leftYear}`
+        ),
+        cloneLALayer(
+          laLayer,
+          activeKpi,
+          rightYear,
+          laMetricType,
+          themeMode,
+          `${activeKpi.toUpperCase()} ${rightYear}`
+        )
+      ]);
 
       // Add to map
       webmap.layers.add(left);
@@ -143,7 +150,7 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       setLeftClone(left);
       setRightClone(right);
 
-      // Wait for load
+      // Wait for layers to load
       await Promise.all([left.when(), right.when()]);
 
       // Create swipe widget
@@ -159,7 +166,8 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       setSwipeWidget(swipe);
       setSwipeYears(leftYear, rightYear);
 
-      message.success(`Comparing ${leftYear} vs ${rightYear}`);
+      // Dismiss loading and show success
+      message.success({ content: `Comparing ${leftYear} vs ${rightYear}`, key: loadingKey, duration: 2 });
 
     } catch (error) {
       console.error('[Swipe] Error:', error);
@@ -170,6 +178,11 @@ const SimpleSwipePanel: FC<SimpleSwipePanelProps> = () => {
       if (rightClone) removeClonedLayer(webmap!, rightClone);
       setLeftClone(null);
       setRightClone(null);
+
+      // Restore original layer visibility
+      if (laLayer) {
+        laLayer.visible = true;
+      }
       exitSwipeMode();
     }
   };

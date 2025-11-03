@@ -451,11 +451,14 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
               label: (context) => {
                 if (stackedMode) {
                   const value = context.parsed.x;
+                  if (value === null) return '';
                   const conditionKey = (context.dataset.label!.toLowerCase().replace(' ', '') + 'Count') as keyof SummaryStatistics;
                   const count = (groupedData[context.dataIndex].stats as any)[conditionKey] || 0;
                   return `${context.dataset.label}: ${value.toFixed(1)}% (${count} segments)`;
                 }
-                return `${context.dataset.label}: ${context.parsed.x.toFixed(2)}`;
+                const xValue = context.parsed.x;
+                if (xValue === null) return '';
+                return `${context.dataset.label}: ${xValue.toFixed(2)}`;
               },
               afterLabel: stackedMode ? () => 'Click to filter map' : undefined
             }

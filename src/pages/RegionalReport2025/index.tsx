@@ -1,13 +1,17 @@
 // src/pages/RegionalReport2025/index.tsx
-import React, { useState } from 'react';
-import { Layout, Menu, Typography, theme, Card, Space } from 'antd';
+import React, { useState, lazy, Suspense } from 'react';
+import { Layout, Menu, Typography, theme, Card, Space, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  FileTextOutlined,
   BarChartOutlined,
   LineChartOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons';
+
+// Lazy load section components
+const NetworkOverviewSection = lazy(() => import('@/components/report/section1/NetworkOverviewSection'));
+const MethodologySection = lazy(() => import('@/components/report/section2/MethodologySection'));
 
 const { Sider, Content } = Layout;
 const { Title, Paragraph } = Typography;
@@ -27,7 +31,7 @@ const RegionalReport2025: React.FC = () => {
     },
     {
       key: 'section2',
-      icon: <FileTextOutlined />,
+      icon: <ExperimentOutlined />,
       label: 'Section 2: Methodology',
     },
     {
@@ -56,48 +60,34 @@ const RegionalReport2025: React.FC = () => {
     switch (selectedSection) {
       case 'section1':
         return (
-          <Space direction="vertical" size="large" style={{ width: '100%' }}>
-            <Title level={2}>Section 1: Network Overview</Title>
-            <Paragraph>
-              This section will contain:
-              <ul>
-                <li><strong>Figure 1.1:</strong> Regional Road Network in Ireland (Map)</li>
-                <li><strong>Figure 1.2:</strong> Road Width Cumulative Frequency (Line graph)</li>
-                <li><strong>Table 1.1:</strong> Regional Road Length (km) by Local Authority</li>
-                <li><strong>Table 1.2:</strong> Average Regional Road Width (m) by Local Authority</li>
-              </ul>
-            </Paragraph>
-            <Card title="Figure 1.1: Regional Road Network Map" bordered={false}>
-              <div style={{ height: 400, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Paragraph type="secondary">Interactive map will be rendered here</Paragraph>
-              </div>
-            </Card>
-            <Card title="Figure 1.2: Road Width Cumulative Frequency" bordered={false}>
-              <div style={{ height: 300, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Paragraph type="secondary">Chart will be rendered here</Paragraph>
-              </div>
-            </Card>
-          </Space>
+          <Suspense fallback={
+            <div style={{
+              height: 400,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Spin size="large" tip="Loading Section 1..." />
+            </div>
+          }>
+            <NetworkOverviewSection year={2025} />
+          </Suspense>
         );
-      
+
       case 'section2':
         return (
-          <Space direction="vertical" size="large" style={{ width: '100%' }}>
-            <Title level={2}>Section 2: Methodology</Title>
-            <Paragraph>
-              This section will contain:
-              <ul>
-                <li><strong>Figure 2.1:</strong> PSCI Rating 1 to 10 (Diagram/Chart)</li>
-                <li><strong>Table 2.1:</strong> IRI Scale</li>
-                <li><strong>Table 2.2:</strong> Condition Class Definitions, 2025</li>
-              </ul>
-            </Paragraph>
-            <Card title="PSCI Rating System" bordered={false}>
-              <div style={{ height: 300, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Paragraph type="secondary">PSCI diagram will be rendered here</Paragraph>
-              </div>
-            </Card>
-          </Space>
+          <Suspense fallback={
+            <div style={{
+              height: 400,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Spin size="large" tip="Loading Section 2..." />
+            </div>
+          }>
+            <MethodologySection />
+          </Suspense>
         );
       
       case 'section3':
@@ -112,12 +102,12 @@ const RegionalReport2025: React.FC = () => {
                 <li><strong>Tables 3.1-3.3:</strong> Performance Parameters and Subgroup Analysis</li>
               </ul>
             </Paragraph>
-            <Card title="Cumulative Frequency Plots (5 charts)" bordered={false}>
+            <Card title="Cumulative Frequency Plots (5 charts)" variant="borderless">
               <div style={{ height: 400, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Paragraph type="secondary">5 line charts will be rendered here</Paragraph>
               </div>
             </Card>
-            <Card title="Subgroup Distribution Charts (4 charts)" bordered={false}>
+            <Card title="Subgroup Distribution Charts (4 charts)" variant="borderless">
               <div style={{ height: 400, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Paragraph type="secondary">4 stacked bar charts will be rendered here</Paragraph>
               </div>
@@ -135,7 +125,7 @@ const RegionalReport2025: React.FC = () => {
                 <li><strong>Figures A.1-A.5:</strong> Cumulative Frequency Plots comparing 2018 and 2025 data</li>
               </ul>
             </Paragraph>
-            <Card title="Historical Comparison Charts" bordered={false}>
+            <Card title="Historical Comparison Charts" variant="borderless">
               <div style={{ height: 400, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Paragraph type="secondary">5 comparison line charts will be rendered here</Paragraph>
               </div>
@@ -153,7 +143,7 @@ const RegionalReport2025: React.FC = () => {
                 <li><strong>Figures B.1-B.5:</strong> Split-screen maps comparing 2018 and 2025 by county</li>
               </ul>
             </Paragraph>
-            <Card title="County Comparison Maps" bordered={false}>
+            <Card title="County Comparison Maps" variant="borderless">
               <div style={{ height: 400, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Paragraph type="secondary">5 split-screen county comparison maps will be rendered here (using existing Swipe tool)</Paragraph>
               </div>

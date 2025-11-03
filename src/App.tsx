@@ -1,7 +1,7 @@
 // src/App.tsx
 import React, { Suspense, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { Layout, Typography, theme, Spin, Tooltip } from 'antd';
+import { Layout, Typography, theme, Spin, Tooltip, App as AntdApp } from 'antd';
 import { withTheme } from '@/config/themeConfig';
 import useAppStore from '@/store/useAppStore';
 import { CONFIG } from '@/config/appConfig';
@@ -96,11 +96,13 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   const { themeMode } = useAppStore();
-  
+
   return withTheme(themeMode, (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
+    <AntdApp>
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
+    </AntdApp>
   ));
 };
 

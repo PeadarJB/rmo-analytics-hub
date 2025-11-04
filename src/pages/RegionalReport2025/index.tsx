@@ -65,6 +65,15 @@ const RegionalReport2025: React.FC = () => {
     setSelectedSection(e.key);
   };
 
+  // ADD THIS LOADING GUARD
+  if (!roadLayer) {
+    return (
+      <Layout style={{ height: '100%', alignItems: 'center', justifyContent: 'center', background: token.colorBgContainer }}>
+        <Spin size="large" tip="Loading layer data..." />
+      </Layout>
+    );
+  }
+
   // Render section content based on selection
   const renderSectionContent = () => {
     switch (selectedSection) {

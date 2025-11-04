@@ -2,10 +2,15 @@ import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import Query from '@arcgis/core/rest/support/Query';
 import {
   CONFIG,
-  getKPIFieldName,
   SEGMENT_LENGTH_KM
 } from '@/config/appConfig';
 import { KPIKey, KPI_THRESHOLDS } from '@/config/kpiConfig';
+import {
+  getKPIFieldName,
+  SUBGROUP_CODE_TO_FIELD,
+  SUBGROUP_OPTIONS,
+  ROAD_FIELDS
+} from '@/config/layerConfig';
 import QueryService from './QueryService';
 import type { FilterState, SummaryStatistics, GroupedConditionStats } from '@/types';
 
@@ -469,7 +474,7 @@ export default class StatisticsService {
       // CRITICAL FIX: Handle subgroup specially
       if (groupByField === 'subgroup') {
         // For subgroups, use predefined categories
-        groups = CONFIG.filters.subgroup.options?.map(opt => opt.label) || [];
+        groups = SUBGROUP_OPTIONS.map(opt => opt.label);
       } else {
         // For regular fields, query unique values
         const groupQuery = layer.createQuery();
@@ -489,16 +494,23 @@ export default class StatisticsService {
         // CRITICAL FIX: Build WHERE clause based on group type
         if (groupByField === 'subgroup') {
           // For subgroups, use the special WHERE clause builder
-          const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => opt.label === groupValue);
+          const subgroupOption = SUBGROUP_OPTIONS.find(opt => opt.label === groupValue);
           if (!subgroupOption) {
             console.warn(`No subgroup option found for: ${groupValue}`);
             return null;
           }
           
           if (subgroupOption.value === 'Rural') {
-            groupWhere = `${whereClause} AND (IsFormerNa = 0 AND IsDublin = 0 AND IsCityTown = 0 AND IsPeat = 0)`;
+            const otherSubgroups = [10, 20, 30, 40]
+              .map(code => `${SUBGROUP_CODE_TO_FIELD[code]} = 0`);
+            groupWhere = `${whereClause} AND (${otherSubgroups.join(' AND ')})`;
           } else {
-            groupWhere = `${whereClause} AND ${subgroupOption.value} = 1`;
+            const fieldName = SUBGROUP_CODE_TO_FIELD[subgroupOption.code];
+            if (!fieldName) {
+              console.warn(`No field mapping found for subgroup code: ${subgroupOption.code}`);
+              return null;
+            }
+            groupWhere = `${whereClause} AND ${fieldName} = 1`;
           }
         } else {
           // For regular fields, use simple equality
@@ -740,25 +752,30 @@ export default class StatisticsService {
    */
   private static buildGroupWhereClause(group: string): string {
     // Handle subgroup categories
-    const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => 
+    const subgroupOption = SUBGROUP_OPTIONS.find(opt => 
       opt.label === group
     );
-    
+ 
     if (subgroupOption) {
       if (subgroupOption.value === 'Rural') {
-        return '(IsFormerNa = 0 AND IsDublin = 0 AND IsCityTown = 0 AND IsPeat = 0)';
+        const otherSubgroups = [10, 20, 30, 40]
+          .map(code => `${SUBGROUP_CODE_TO_FIELD[code]} = 0`);
+        return `(${otherSubgroups.join(' AND ')})`;
       } else {
-        return `${subgroupOption.value} = 1`;
+        const fieldName = SUBGROUP_CODE_TO_FIELD[subgroupOption.code];
+        if (fieldName) {
+          return `${fieldName} = 1`;
+        }
       }
     }
     
     // Handle Local Authority or Route
     if (group.includes('R') && group.length <= 5) {
       // Likely a route
-      return `${CONFIG.fields.route} = '${group.replace("'", "''")}'`;
+      return `${ROAD_FIELDS.route} = '${group.replace("'", "''")}'`;
     } else {
       // Likely a Local Authority
-      return `${CONFIG.fields.la} = '${group.replace("'", "''")}'`;
+      return `${ROAD_FIELDS.la} = '${group.replace("'", "''")}'`;
     }
   }
 

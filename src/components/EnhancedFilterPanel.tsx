@@ -4,6 +4,7 @@ import { FilterOutlined, ClearOutlined } from '@ant-design/icons'; // ADD icons
 import useAppStore from '@/store/useAppStore';
 import QueryService from '@/services/QueryService';
 import { CONFIG } from '@/config/appConfig';
+import { ROAD_FIELDS } from '@/config/layerConfig';
 
 const EnhancedFilterPanel: React.FC = () => {
   const { roadLayer, currentFilters, setFilters, applyFilters, clearAllFilters, loading } = useAppStore();
@@ -15,8 +16,8 @@ const EnhancedFilterPanel: React.FC = () => {
 
   // Load unique values for LA on mount
   useEffect(() => {
-    QueryService.getUniqueValues(roadLayer, CONFIG.fields.la).then(setLaOptions);
-    QueryService.getUniqueValues(roadLayer, CONFIG.fields.route).then((routes) => {
+    QueryService.getUniqueValues(roadLayer, ROAD_FIELDS.la).then(setLaOptions);
+    QueryService.getUniqueValues(roadLayer, ROAD_FIELDS.route).then((routes) => {
       setRouteOptions(routes);
       setAvailableRoutes(routes); // Initially show all routes
     });

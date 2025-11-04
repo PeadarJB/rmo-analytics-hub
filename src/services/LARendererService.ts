@@ -11,7 +11,7 @@ import {
   LA_FIELD_PATTERNS,
   LA_COLOR_GRADIENTS,
   LA_PERCENTAGE_RANGES
-} from '@/config/appConfig';
+} from '@/config/layerConfig';
 import { KPIKey, KPI_THRESHOLDS } from '@/config/kpiConfig';
 
 /**

@@ -3,7 +3,7 @@ import { Card, Select, Space, Spin, Alert, theme, Switch, message, Button, Tag }
 import { Chart, ChartConfiguration, ChartEvent, ActiveElement } from 'chart.js/auto';
 import { useDebouncedCallback } from '@/hooks/useDebounce';
 import useAppStore from '@/store/useAppStore';
-import { CONFIG, RENDERER_CONFIG, getKPIFieldName } from '@/config/appConfig';
+import { CONFIG, RENDERER_CONFIG } from '@/config/appConfig';
 import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 import QueryService from '@/services/QueryService';
 import { getChartThemeColors } from '@/utils/themeHelpers';
@@ -11,28 +11,33 @@ import StatisticsService from '@/services/StatisticsService';
 import type { FilterState, GroupedConditionStats } from '@/types';
 import Query from '@arcgis/core/rest/support/Query';
 import type { SummaryStatistics } from '@/types';
+import {
+  ROAD_FIELDS,
+  SUBGROUP_OPTIONS,
+  getKPIFieldName
+} from '@/config/layerConfig';
 
 const groupByOptions = [
-  { label: 'Local Authority', value: CONFIG.fields.la },
-  { label: 'Route', value: CONFIG.fields.route },
+  { label: 'Local Authority', value: ROAD_FIELDS.la },
+  { label: 'Route', value: ROAD_FIELDS.route },
   { label: 'Subgroup', value: 'subgroup' } 
 ];
 
 const buildSubgroupWhereClause = (subgroup: string): string => {
-  const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => 
+  const subgroupOption = SUBGROUP_OPTIONS.find(opt => 
     opt.label === subgroup
   );
   
   if (subgroupOption) {
     // This logic is based on how subgroups are defined in the data
-    const fieldName = CONFIG.filters.subgroup.options.find(o => o.code === subgroupOption.code)?.value;
+    const fieldName = SUBGROUP_OPTIONS.find(o => o.code === subgroupOption.code)?.value;
     if (fieldName) {
       return `${fieldName} = 1`;
     }
   }
   // Fallback for 'Rural' or if not found
   if (subgroup === 'Rural') {
-    const definedSubgroups = CONFIG.filters.subgroup.options
+    const definedSubgroups = SUBGROUP_OPTIONS
       .filter(o => o.value !== 'Rural')
       .map(o => `${o.value} = 0`)
       .join(' AND ');

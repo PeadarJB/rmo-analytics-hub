@@ -3,7 +3,7 @@
 
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import type { KPIKey } from '@/config/kpiConfig';
-import type { LAMetricType } from '@/config/appConfig';
+import type { LAMetricType } from '@/config/layerConfig';
 import LARendererService from '@/services/LARendererService';
 
 /**

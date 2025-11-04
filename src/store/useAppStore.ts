@@ -5,13 +5,13 @@ import type WebMap from '@arcgis/core/WebMap';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import type Extent from '@arcgis/core/geometry/Extent';
 import { message } from 'antd'; // ADD LAMetricType
+import { CONFIG } from '@/config/appConfig';
 import {
-  CONFIG,
   LA_LAYER_CONFIG,
   SUBGROUP_CODE_TO_FIELD,
   SubgroupOption,
   LAMetricType
-} from '@/config/appConfig';
+} from '@/config/layerConfig';
 import { KPIKey, KPI_LABELS } from '@/config/kpiConfig';
 import MapViewService from '@/services/MapViewService';
 import LARendererService from '@/services/LARendererService';

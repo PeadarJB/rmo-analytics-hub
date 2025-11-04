@@ -2,9 +2,9 @@ import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';
 import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';
 import {
   RENDERER_CONFIG,
-  CONFIG,
-  getKPIFieldName
+  CONFIG
 } from '@/config/appConfig';
+import { getKPIFieldName } from '@/config/layerConfig';
 import {
   KPIKey, KPI_THRESHOLDS
 } from '@/config/kpiConfig';

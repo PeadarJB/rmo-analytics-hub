@@ -1,6 +1,13 @@
 // src/config/layerConfig.ts
 
 import type { KPIKey } from './kpiConfig';
+import { LA_COLOR_GRADIENTS, LA_PERCENTAGE_RANGES } from './rendererConfig';
+
+/**
+ * ============================================================================
+ * LA (LOCAL AUTHORITY) LAYER CONFIGURATION
+ * ============================================================================
+ */
 
 /**
  * LA Layer Configuration
@@ -30,7 +37,6 @@ export const LA_LAYER_CONFIG = {
   
   /**
    * Alternative patterns to try if primary pattern fails
-   * Useful for finding layers with non-standard naming conventions
    */
   alternativePatterns: [
     (kpi: string, year: number) => `${year} Average ${kpi.toUpperCase()}`,
@@ -83,6 +89,12 @@ export const LA_FIELD_PATTERNS = {
 };
 
 /**
+ * ============================================================================
+ * ROAD NETWORK LAYER CONFIGURATION
+ * ============================================================================
+ */
+
+/**
  * Road Network Field Mappings
  * Maps logical field names to actual field names in the road network feature layer
  */
@@ -106,29 +118,34 @@ export const ROAD_FIELDS = {
   // Attribute fields
   route: 'Route',           // Route identifier
   la: 'LA',                 // Local Authority
-  subgroupPlaceholder: 'RoadGroupCode',
   
-  // LA layer field
+  // Subgroup boolean fields
+  isFormerNa: 'IsFormerNa',
+  isDublin: 'IsDublin',
+  isCityTown: 'IsCityTown',
+  isPeat: 'IsPeat',
+  
+  // LA layer join field
   laCounty: 'OSICB_Boundary_1_COUNTY'
 } as const;
+
+
+/**
+ * ============================================================================
+ * SUBGROUP CONFIGURATION
+ * ============================================================================
+ */
 
 /**
  * Subgroup Code to Field Name Mapping
  * Maps subgroup codes (used in filters) to their boolean field names in the dataset
- * 
- * Subgroup categories for Irish regional roads:
- * - 10: Former National routes (high traffic)
- * - 20: Dublin roads (urban, high density)
- * - 30: City/Town roads (urban centers)
- * - 40: Peat roads (special foundation conditions)
- * - 50: Rural roads (default/baseline)
  */
 export const SUBGROUP_CODE_TO_FIELD: Record<number, string> = {
-  10: 'IsFormerNa',     // Former National routes
-  20: 'IsDublin',       // Dublin roads
-  30: 'IsCityTown',     // City/Town roads
-  40: 'IsPeat',         // Peat roads
-  50: 'Rural'           // Rural roads (catch-all)
+  10: ROAD_FIELDS.isFormerNa,
+  20: ROAD_FIELDS.isDublin,
+  30: ROAD_FIELDS.isCityTown,
+  40: ROAD_FIELDS.isPeat,
+  50: 'Rural' // 'Rural' is a virtual category, not a field
 };
 
 /**
@@ -136,10 +153,10 @@ export const SUBGROUP_CODE_TO_FIELD: Record<number, string> = {
  * Useful for reverse lookups when processing data
  */
 export const SUBGROUP_FIELD_TO_CODE: Record<string, number> = {
-  'IsFormerNa': 10,
-  'IsDublin': 20,
-  'IsCityTown': 30,
-  'IsPeat': 40,
+  [ROAD_FIELDS.isFormerNa]: 10,
+  [ROAD_FIELDS.isDublin]: 20,
+  [ROAD_FIELDS.isCityTown]: 30,
+  [ROAD_FIELDS.isPeat]: 40,
   'Rural': 50
 };
 
@@ -150,17 +167,24 @@ export const SUBGROUP_FIELD_TO_CODE: Record<string, number> = {
  */
 export interface SubgroupOption {
   label: string;
-  value: string;  // Field name
+  value: string;  // Field name or 'Rural'
   code: number;   // Numeric code
 }
 
 export const SUBGROUP_OPTIONS: SubgroupOption[] = [
-  { label: 'Former National', value: 'IsFormerNa', code: 10 },
-  { label: 'Dublin', value: 'IsDublin', code: 20 },
-  { label: 'City/Town', value: 'IsCityTown', code: 30 },
-  { label: 'Peat', value: 'IsPeat', code: 40 },
+  { label: 'Former National', value: ROAD_FIELDS.isFormerNa, code: 10 },
+  { label: 'Dublin', value: ROAD_FIELDS.isDublin, code: 20 },
+  { label: 'City/Town', value: ROAD_FIELDS.isCityTown, code: 30 },
+  { label: 'Peat', value: ROAD_FIELDS.isPeat, code: 40 },
   { label: 'Rural', value: 'Rural', code: 50 }
 ];
+
+
+/**
+ * ============================================================================
+ * HELPER FUNCTIONS
+ * ============================================================================
+ */
 
 /**
  * Helper function to get KPI field name for a specific year
@@ -172,12 +196,12 @@ export const SUBGROUP_OPTIONS: SubgroupOption[] = [
 export function getKPIFieldName(kpi: KPIKey, year: number, useClass: boolean = false): string {
   if (useClass) {
     const classFieldMap: Record<KPIKey, string> = {
-      'iri': 'IRI_Class',
-      'rut': 'Rut_Class',
-      'csc': 'CSC_Class',
-      'mpd': 'MPD_Class',
-      'psci': 'PSCI_Class',
-      'lpv3': 'LPV_Class'
+      'iri': ROAD_FIELDS.iriClass,
+      'rut': ROAD_FIELDS.rutClass,
+      'csc': ROAD_FIELDS.cscClass,
+      'mpd': ROAD_FIELDS.mpdClass,
+      'psci': ROAD_FIELDS.psciClass,
+      'lpv3': ROAD_FIELDS.lpvClass
     };
     return `${classFieldMap[kpi]}_${year}`;
   }
@@ -239,3 +263,12 @@ export function getSubgroupLabel(code: number): string {
 export function getSubgroupCode(fieldName: string): number | null {
   return SUBGROUP_FIELD_TO_CODE[fieldName] || null;
 }
+
+/**
+ * ============================================================================
+ * RE-EXPORT RENDERER CONFIGS
+ * ============================================================================
+ * Re-export renderer-specific configs from rendererConfig
+ * so they are co-located with layer definitions.
+ */
+export { LA_COLOR_GRADIENTS, LA_PERCENTAGE_RANGES } from './rendererConfig';

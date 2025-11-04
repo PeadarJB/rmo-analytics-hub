@@ -1,7 +1,8 @@
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import Query from '@arcgis/core/rest/support/Query';
 import type MapView from '@arcgis/core/views/MapView';
-import { CONFIG, SUBGROUP_CODE_TO_FIELD } from '@/config/appConfig';
+import { CONFIG } from '@/config/appConfig';
+import { ROAD_FIELDS, SUBGROUP_CODE_TO_FIELD } from '@/config/layerConfig';
 import type { FilterState } from '@/types';
 
 /**
@@ -28,13 +29,13 @@ export default class QueryService {
     // Local Authority filter
     if (filters.localAuthority && filters.localAuthority.length > 0) {
       const laValues = filters.localAuthority.map(la => `'${la}'`).join(', ');
-      whereClauses.push(`${CONFIG.fields.la} IN (${laValues})`);
+      whereClauses.push(`${ROAD_FIELDS.la} IN (${laValues})`);
     }
 
     // Route filter
     if (filters.route && filters.route.length > 0) {
       const routeValues = filters.route.map(r => `'${r}'`).join(', ');
-      whereClauses.push(`${CONFIG.fields.route} IN (${routeValues})`);
+      whereClauses.push(`${ROAD_FIELDS.route} IN (${routeValues})`);
     }
 
     // Subgroup filter
@@ -130,9 +131,9 @@ export default class QueryService {
       const tempFilters = { ...currentFilters };
       
       // Clear the filter for the field being queried
-      if (fieldName === CONFIG.fields.la) {
+      if (fieldName === ROAD_FIELDS.la) {
         tempFilters.localAuthority = [];
-      } else if (fieldName === CONFIG.fields.route) {
+      } else if (fieldName === ROAD_FIELDS.route) {
         tempFilters.route = [];
       }
 
@@ -182,22 +183,22 @@ export default class QueryService {
       let whereClause = '1=1';
       if (selectedLAs && selectedLAs.length > 0) {
         const laValues = selectedLAs.map(la => `'${la.replace("'", "''")}'`).join(', ');
-        whereClause = `${CONFIG.fields.la} IN (${laValues})`;
+        whereClause = `${ROAD_FIELDS.la} IN (${laValues})`;
       }
 
       console.log(`[QueryService] Querying routes for LAs:`, selectedLAs.length > 0 ? selectedLAs : 'ALL');
 
       const query = layer.createQuery();
       query.where = whereClause;
-      query.outFields = [CONFIG.fields.route];
+      query.outFields = [ROAD_FIELDS.route];
       query.returnDistinctValues = true;
       query.returnGeometry = false;
-      query.orderByFields = [CONFIG.fields.route];
+      query.orderByFields = [ROAD_FIELDS.route];
 
       const result = await layer.queryFeatures(query);
 
       const routes = result.features
-        .map(feature => feature.attributes[CONFIG.fields.route])
+        .map(feature => feature.attributes[ROAD_FIELDS.route])
         .filter(value => value != null && value !== '');
 
       // Sort alphabetically (case-insensitive)

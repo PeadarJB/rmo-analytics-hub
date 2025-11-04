@@ -12,6 +12,7 @@ import {
 // Lazy load section components
 const NetworkOverviewSection = lazy(() => import('@/components/report/section1/NetworkOverviewSection'));
 const MethodologySection = lazy(() => import('@/components/report/section2/MethodologySection'));
+const Section3 = lazy(() => import('@/components/report/section3/Section3'));
 
 const { Sider, Content } = Layout;
 const { Title, Paragraph } = Typography;
@@ -92,27 +93,18 @@ const RegionalReport2025: React.FC = () => {
       
       case 'section3':
         return (
-          <Space direction="vertical" size="large" style={{ width: '100%' }}>
-            <Title level={2}>Section 3: Performance Summary</Title>
-            <Paragraph>
-              This section will contain:
-              <ul>
-                <li><strong>Figures 3.1-3.5:</strong> Cumulative Frequency Plots (IRI, Rut, MPD, CSC, PSCI)</li>
-                <li><strong>Figures 3.6-3.9:</strong> Distributions by Subgroup (Stacked bar charts)</li>
-                <li><strong>Tables 3.1-3.3:</strong> Performance Parameters and Subgroup Analysis</li>
-              </ul>
-            </Paragraph>
-            <Card title="Cumulative Frequency Plots (5 charts)" variant="borderless">
-              <div style={{ height: 400, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Paragraph type="secondary">5 line charts will be rendered here</Paragraph>
-              </div>
-            </Card>
-            <Card title="Subgroup Distribution Charts (4 charts)" variant="borderless">
-              <div style={{ height: 400, background: token.colorBgLayout, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Paragraph type="secondary">4 stacked bar charts will be rendered here</Paragraph>
-              </div>
-            </Card>
-          </Space>
+          <Suspense fallback={
+            <div style={{
+              height: 400,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Spin size="large" tip="Loading Section 3..." />
+            </div>
+          }>
+            <Section3 year={2025} />
+          </Suspense>
         );
       
       case 'appendixA':

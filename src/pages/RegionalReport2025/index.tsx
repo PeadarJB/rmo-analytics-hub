@@ -14,6 +14,7 @@ import useAppStore from '@/store/useAppStore';
 const NetworkOverviewSection = lazy(() => import('@/components/report/section1/NetworkOverviewSection'));
 const MethodologySection = lazy(() => import('@/components/report/section2/MethodologySection'));
 const Section3 = lazy(() => import('@/components/report/section3/Section3'));
+const Section4 = lazy(() => import('@/components/report/section4/Section4').then(module => ({ default: module.Section4 })));
 
 const { Sider, Content } = Layout;
 const { Title, Paragraph } = Typography;
@@ -23,7 +24,7 @@ type MenuItem = Required<MenuProps>['items'][number];
 const RegionalReport2025: React.FC = () => {
   const { token } = theme.useToken();
   const [selectedSection, setSelectedSection] = useState<string>('section1');
-  const { initializeLayersOnly, roadLayer } = useAppStore();
+  const { initializeLayersOnly, roadLayer, loading, loadingMessage } = useAppStore();
 
   // Initialize layers when component mounts
   useEffect(() => {
@@ -50,6 +51,11 @@ const RegionalReport2025: React.FC = () => {
       label: 'Section 3: Performance Summary',
     },
     {
+      key: 'section4',
+      icon: <BarChartOutlined />,
+      label: 'Section 4: LA Performance',
+    },
+    {
       key: 'appendixA',
       icon: <LineChartOutlined />,
       label: 'Appendix A: 2018 vs 2025',
@@ -65,17 +71,22 @@ const RegionalReport2025: React.FC = () => {
     setSelectedSection(e.key);
   };
 
-  // ADD THIS LOADING GUARD
-  if (!roadLayer) {
-    return (
-      <Layout style={{ height: '100%', alignItems: 'center', justifyContent: 'center', background: token.colorBgContainer }}>
-        <Spin size="large" tip="Loading layer data..." />
-      </Layout>
-    );
-  }
-
   // Render section content based on selection
   const renderSectionContent = () => {
+    if (loading || !roadLayer) {
+      return (
+        <div style={{
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '48px'
+        }}>
+          <Spin size="large" tip={loadingMessage || 'Loading report data...'} />
+        </div>
+      );
+    }
+
     switch (selectedSection) {
       case 'section1':
         return (
@@ -124,7 +135,23 @@ const RegionalReport2025: React.FC = () => {
             <Section3 year={2025} />
           </Suspense>
         );
-      
+
+      case 'section4':
+        return (
+          <Suspense fallback={
+            <div style={{
+              height: 400,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Spin size="large" tip="Loading Section 4..." />
+            </div>
+          }>
+            <Section4 roadLayer={roadLayer} />
+          </Suspense>
+        );
+
       case 'appendixA':
         return (
           <Space direction="vertical" size="large" style={{ width: '100%' }}>

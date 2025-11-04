@@ -4,11 +4,28 @@ import React, { useEffect, useState } from 'react';
 import { Card, Table, Spin, Alert, Button, Space, Typography, Tabs } from 'antd';
 import { TableOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { KPIKey, KPI_LABELS } from '@/config/kpiConfig';
-import { getConditionClassName, getConditionClassThresholds } from '@/utils/conditionClassHelpers';
+import { KPIKey, KPI_LABELS, getConditionClass } from '@/config/kpiConfig';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph } = Typography;
 const { TabPane } = Tabs;
+
+/**
+ * Convert condition class key to readable name
+ */
+const getConditionClassName = (kpi: KPIKey, value: number): string => {
+  const classKey = getConditionClass(kpi, value, true);
+  if (!classKey) return 'Unknown';
+
+  const classNames: Record<string, string> = {
+    veryGood: 'Very Good',
+    good: 'Good',
+    fair: 'Fair',
+    poor: 'Poor',
+    veryPoor: 'Very Poor'
+  };
+
+  return classNames[classKey] || 'Unknown';
+};
 
 interface LAPerformanceTablesProps {
   roadLayer: __esri.FeatureLayer | null;
@@ -97,7 +114,7 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
     query.returnGeometry = false;
 
     const result = await roadLayer.queryFeatures(query);
-    
+
     // Group by LA and calculate averages
     const laMap = new Map<string, {
       iri: number[];

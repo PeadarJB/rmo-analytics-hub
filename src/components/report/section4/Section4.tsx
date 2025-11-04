@@ -13,10 +13,10 @@ interface Section4Props {
 
 /**
  * Section 4: Local Authority Performance
- * 
+ *
  * This section provides detailed performance analysis at the Local Authority level,
  * showing average values and condition class distributions for all key performance indicators.
- * 
+ *
  * Implements:
  * - Table 4.1: Average condition values for all 6 KPIs by LA
  * - Table 4.2: IRI condition class distribution by LA

@@ -168,35 +168,47 @@ export class NetworkDataService {
       const query = this.roadLayer.createQuery();
       query.where = this.buildDataExistsWhereClause(year);
       query.outFields = ['Shape_Length'];
-      query.returnGeometry = true;
+      query.returnGeometry = false; // No geometry needed
 
       const result = await this.roadLayer.queryFeatures(query);
 
-      // Calculate width for each segment (placeholder implementation)
-      const widths: number[] = result.features.map(() => {
-        // Placeholder: Generate realistic width distribution
-        // Most regional roads are 5-7m, with some narrower rural roads
-        return 5.0 + Math.random() * 2.5; // 5-7.5m range
-      });
+      // Calculate width from the queried 'Shape_Length' field
+      const widths: number[] = result.features
+        .map(feature => feature.attributes.Shape_Length as number)
+        .filter((w): w is number => w != null);
 
       // Sort widths
       widths.sort((a, b) => a - b);
 
-      // Calculate cumulative frequency at regular intervals
+      if (widths.length === 0) {
+        console.warn('No width data found, returning empty distribution.');
+        return [];
+      }
+
       const distribution: RoadWidthDistribution[] = [];
       const totalCount = widths.length;
 
-      // Create distribution points every 0.1m from min to max width
+      // Use the actual min/max from the data
       const minWidth = Math.floor(Math.min(...widths) * 10) / 10;
       const maxWidth = Math.ceil(Math.max(...widths) * 10) / 10;
 
-      for (let w = minWidth; w <= maxWidth; w += 0.1) {
+      // Use a reasonable step, or just 0.1
+      const step = Math.max(0.1, (maxWidth - minWidth) / 100);
+
+      for (let w = minWidth; w <= maxWidth; w += step) {
         const count = widths.filter(width => width <= w).length;
         const cumulativePercent = (count / totalCount) * 100;
 
         distribution.push({
           width: Math.round(w * 10) / 10,
           cumulativePercent: Math.round(cumulativePercent * 100) / 100
+        });
+      }
+
+      if (distribution.length > 0 && distribution[distribution.length - 1].cumulativePercent < 100) {
+        distribution.push({
+          width: maxWidth,
+          cumulativePercent: 100
         });
       }
 

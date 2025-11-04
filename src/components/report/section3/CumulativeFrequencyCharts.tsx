@@ -179,6 +179,8 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
       throw new Error('Road layer not available');
     }
 
+    console.log('[CumulativeFrequencyCharts] Querying layer:', roadLayer.title);
+
     const results: Record<string, CumulativeData> = {};
 
     // Fetch data for each KPI
@@ -190,7 +192,7 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
 
       // Query all features with this KPI value
       const query = roadLayer.createQuery();
-      query.where = `${fieldName} IS NOT NULL AND ${fieldName} > 0`;
+      query.where = `${fieldName} IS NOT NULL`;
       query.outFields = [fieldName];
       query.returnGeometry = false;
 

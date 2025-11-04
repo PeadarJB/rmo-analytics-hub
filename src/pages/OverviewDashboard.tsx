@@ -34,10 +34,9 @@ const OverviewDashboard: React.FC = () => {
     }
   }, [isHoveringChart]);
 
-  // Guarded map init: only if container has no children
   useEffect(() => {
     const container = document.getElementById('viewDiv');
-    if (container && !container.hasChildNodes()) {
+    if (container) {
       initializeMap('viewDiv');
     }
   }, [initializeMap]);

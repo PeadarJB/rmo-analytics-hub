@@ -39,6 +39,7 @@ interface AppState {
   initialExtent: Extent | null;
   error: string | null;
   preSwipeDefinitionExpression: string | null;
+  preSwipeLALayerVisible: boolean | null;
   mapInitialized: boolean;
 
   leftSwipeYear: number;
@@ -133,6 +134,7 @@ const useAppStore = create<AppState>()(
         initialExtent: null,
         error: null,
         preSwipeDefinitionExpression: null,
+        preSwipeLALayerVisible: null,
         mapInitialized: false,
         roadLayerVisible: true,
         swipePanelAutoStart: false, 
@@ -429,12 +431,16 @@ const useAppStore = create<AppState>()(
         },
 
         enterSwipeMode: () => {
-          const { roadLayer } = get();
+          const { roadLayer, laLayer, laLayerVisible } = get();
           if (roadLayer) {
-            set({ 
+            set({
               preSwipeDefinitionExpression: (roadLayer as any).definitionExpression || '1=1',
-              isSwipeActive: true // Set active flag here
+              isSwipeActive: true
             });
+          }
+          if (laLayer) {
+            set({ preSwipeLALayerVisible: laLayerVisible });
+            laLayer.visible = false;
           }
           get().hideRoadNetworkForSwipe();
         },
@@ -444,53 +450,53 @@ const useAppStore = create<AppState>()(
          * It restores the saved filter definition to the main road layer.
          */
         exitSwipeMode: () => {
-          const { roadLayer, preSwipeDefinitionExpression } = get();
+          const { roadLayer, preSwipeDefinitionExpression, laLayer, preSwipeLALayerVisible } = get();
           if (roadLayer) {
-            (roadLayer as any).definitionExpression = preSwipeDefinitionExpression || '1=1'; // Restore filter
-            roadLayer.visible = true; // Ensure road layer visibility is restored
+            (roadLayer as any).definitionExpression = preSwipeDefinitionExpression || '1=1';
           }
-          set({ 
+          if (laLayer) {
+            laLayer.visible = preSwipeLALayerVisible ?? false;
+          }
+          set({
             preSwipeDefinitionExpression: null,
-            isSwipeActive: false // Clear active flag here
+            preSwipeLALayerVisible: null,
+            isSwipeActive: false
           });
           get().restoreRoadNetworkVisibility();
         },
 
         initializeMap: async (containerId: string) => {
           const state = get();
-          
-          // GUARD 1: Check if map is already initialized
-          if (state.mapInitialized && state.mapView) {
-            console.log('Map already initialized, skipping re-initialization');
-            
-            // Just ensure the view container is correct
-            const container = document.getElementById(containerId);
-            if (container && state.mapView.container !== container) {
-              console.log('Updating map container');
-              (state.mapView as any).container = container;
-            }
-            
-            return; // Early return - map already exists
+          const container = document.getElementById(containerId);
+
+          if (!container) {
+            const errorMsg = `Container element with id "${containerId}" not found`;
+            console.error(errorMsg);
+            message.error(errorMsg);
+            set({ error: errorMsg });
+            return;
           }
-          
-          // GUARD 2: Prevent concurrent initialization attempts
-          if (state.loading && state.mapInitialized) {
+
+          if (state.mapView && !state.mapView.destroyed) {
+            if (state.mapView.container === container) {
+              console.log('Map already initialized and in correct container.');
+              return;
+            }
+
+            console.log('Map view exists, re-attaching to new container.');
+            (state.mapView as any).container = container;
+            return;
+          }
+
+          if (state.loading && !state.mapInitialized) {
             console.log('Map initialization already in progress');
             return;
           }
-          
+
           try {
-            set({ loading: true, loadingMessage: 'Loading map...', error: null });
-            
-            // Check if container exists
-            const container = document.getElementById(containerId);
-            if (!container) {
-              throw new Error(`Container element with id "${containerId}" not found`);
-            }
-            
-            // GUARD 3: Check if a map view is already attached to this container
+            set({ loading: true, loadingMessage: 'Loading map...', error: null, mapInitialized: false });
+
             if ((container as any).__esri_mapview) {
-              console.warn('Container already has a map view attached, cleaning up');
               const existingView = (container as any).__esri_mapview;
               if (existingView && existingView.destroy) {
                 existingView.destroy();
@@ -521,20 +527,14 @@ const useAppStore = create<AppState>()(
             ) as FeatureLayer | undefined;
 
             if (laLayer) {
-              console.log('✓ Found LA layer:', laLayer.title);
-              await laLayer.load();
+              console.log('[Map Init] Found LA layer:', laLayer.title);
               laLayer.visible = false; // Hidden by default
               laLayer.opacity = 0.7;
-
-              // Position below road network
-              if (road) {
-                const roadIndex = webmap.layers.indexOf(road as any);
-                webmap.reorder(laLayer, roadIndex);
-              }
+              webmap.layers.reorder(laLayer, 0);
             }
 
             if (!road) {
-              message.warning('Road network layer not found. Check layer title in config.');
+              throw new Error(`Road network layer "${CONFIG.roadNetworkLayerTitle}" not found`);
             }
 
             set({
@@ -549,22 +549,13 @@ const useAppStore = create<AppState>()(
               mapInitialized: true,
               error: null
             });
-            
-            // Apply initial renderer if layer is available
-            if (road) {
-              get().updateRenderer();
-            }
 
-            // Preload all other renderers in the background during idle time
-            // to make subsequent KPI/year changes instantaneous.
+            const { updateRenderer } = get();
+            updateRenderer();
             RendererService.preloadAllRenderers(get().themeMode).catch(err =>
               console.warn('Background renderer preloading failed:', err)
             );
 
-            if (state.mapView) { // This destroys the *previous* view, which is correct
-              state.mapView.destroy();
-            }
-            
             console.log('Map initialization completed successfully');
           } catch (e: any) {
             console.error('Map initialization error:', e);
@@ -989,13 +980,15 @@ const useAppStore = create<AppState>()(
          * Toggle LA layer visibility
          */
         setLALayerVisible: (visible: boolean) => {
-          const { laLayer } = get();
-          
+          const { laLayer, isSwipeActive } = get();
+
           set({ laLayerVisible: visible });
-          
-          if (laLayer) {
+
+          if (laLayer && !isSwipeActive) {
             laLayer.visible = visible;
             console.log(`LA layer visibility set to: ${visible}`);
+          } else if (laLayer && isSwipeActive) {
+            console.log(`LA layer desired visibility set to ${visible}, but layer is hidden by swipe mode.`);
           }
         },
 

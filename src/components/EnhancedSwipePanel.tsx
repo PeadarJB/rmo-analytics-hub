@@ -63,14 +63,9 @@ const EnhancedSwipePanel: FC = () => {
       }
     }
 
-    // Show original
-    if (laLayer) {
-      laLayer.visible = true;
-    }
-
     exitSwipeMode();
     message.info('Comparison stopped');
-  }, [swipeWidget, mapView, webmap, leftClone, rightClone, laLayer, exitSwipeMode]);
+  }, [swipeWidget, mapView, webmap, leftClone, rightClone, exitSwipeMode]);
 
   /**
    * Activates the swipe widget with current settings
@@ -90,8 +85,6 @@ const EnhancedSwipePanel: FC = () => {
     try {
       const { default: Swipe } = await import('@arcgis/core/widgets/Swipe');
 
-      // Hide original layer
-      laLayer.visible = false;
       enterSwipeMode();
 
       // Show loading message while creating layers with continuous gradients
@@ -154,10 +147,6 @@ const EnhancedSwipePanel: FC = () => {
       setLeftClone(null);
       setRightClone(null);
 
-      // Restore original layer visibility
-      if (laLayer) {
-        laLayer.visible = true;
-      }
       exitSwipeMode();
     }
   }, [mapView, webmap, laLayer, activeKpi, leftSwipeYear, rightSwipeYear, laMetricType, themeMode, direction, leftClone, rightClone, enterSwipeMode, exitSwipeMode]);

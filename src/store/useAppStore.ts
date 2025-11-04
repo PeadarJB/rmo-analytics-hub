@@ -74,6 +74,7 @@ interface AppState {
 
   // Actions
   initializeMap: (containerId: string) => Promise<void>;
+  initializeLayersOnly: () => Promise<void>;
   setError: (err: string | null) => void;
   setThemeMode: (mode: ThemeMode) => void;
 
@@ -573,6 +574,97 @@ const useAppStore = create<AppState>()(
               loading: false,
               loadingMessage: null,
               mapInitialized: false // Reset on error
+            });
+            message.error(errorMsg);
+          }
+        },
+
+        /**
+         * Initialize layers only without creating a map view
+         * Useful for pages that need layer data but don't display a map
+         */
+        initializeLayersOnly: async () => {
+          const state = get();
+
+          // If layers are already loaded, skip
+          if (state.roadLayer) {
+            console.log('Layers already initialized');
+            return;
+          }
+
+          // If map is already initialized, layers are available
+          if (state.mapInitialized) {
+            console.log('Map already initialized, layers available');
+            return;
+          }
+
+          try {
+            set({ loading: true, loadingMessage: 'Loading layers...', error: null });
+
+            console.log('Initializing layers without map view...');
+
+            // Import required modules
+            const [WebMap] = await Promise.all([
+              import('@arcgis/core/WebMap')
+            ]);
+
+            // Load the web map
+            const webmap = new WebMap.default({
+              portalItem: {
+                id: CONFIG.webMapId
+              }
+            });
+
+            await webmap.load();
+
+            // Find the layers
+            const road = webmap.allLayers.find(
+              (l: any) => l.title === CONFIG.roadNetworkLayerTitle
+            ) as FeatureLayer | undefined;
+
+            const roadSwipe = webmap.allLayers.find(
+              (l: any) => l.title === CONFIG.roadNetworkLayerSwipeTitle
+            ) as FeatureLayer | undefined;
+
+            const laLayer = webmap.allLayers.find(
+              (l: any) => l.title === CONFIG.laPolygonLayerTitle
+            ) as FeatureLayer | undefined;
+
+            if (!road) {
+              console.warn('Road network layer not found');
+            } else {
+              await road.load();
+              console.log('✓ Road layer loaded');
+            }
+
+            if (roadSwipe) {
+              await roadSwipe.load();
+              console.log('✓ Road swipe layer loaded');
+            }
+
+            if (laLayer) {
+              await laLayer.load();
+              console.log('✓ LA layer loaded');
+            }
+
+            set({
+              webmap,
+              roadLayer: road ?? null,
+              roadLayerSwipe: roadSwipe ?? null,
+              laLayer: laLayer ?? null,
+              loading: false,
+              loadingMessage: null,
+              error: null
+            });
+
+            console.log('Layers initialized successfully (no map view)');
+          } catch (e: any) {
+            console.error('Layer initialization error:', e);
+            const errorMsg = e?.message || 'Failed to initialize layers';
+            set({
+              error: errorMsg,
+              loading: false,
+              loadingMessage: null
             });
             message.error(errorMsg);
           }

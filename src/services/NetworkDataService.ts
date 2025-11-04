@@ -37,6 +37,17 @@ export class NetworkDataService {
   }
 
   /**
+   * Build a WHERE clause to check if data exists for a given year
+   * Uses KPI field existence instead of HasData field (which may not exist for all years)
+   */
+  private buildDataExistsWhereClause(year: number): string {
+    // Check if any of the primary KPI fields exist for this year
+    // Using AIRI (IRI) as the primary indicator since it's always collected
+    const primaryField = `AIRI_${year}`;
+    return `${primaryField} IS NOT NULL`;
+  }
+
+  /**
    * Query total road length by Local Authority
    * Table 1.1: Regional Road Length (km) by Local Authority
    */
@@ -48,7 +59,7 @@ export class NetworkDataService {
     try {
       // Query features with LA and length
       const query = this.roadLayer.createQuery();
-      query.where = `HasData_${year} = 1`; // Only roads with data for the specified year
+      query.where = this.buildDataExistsWhereClause(year);
       query.outFields = ['LA', 'Shape_Length'];
       query.returnGeometry = false;
 
@@ -100,7 +111,7 @@ export class NetworkDataService {
     try {
       // Query features with LA
       const query = this.roadLayer.createQuery();
-      query.where = `HasData_${year} = 1`;
+      query.where = this.buildDataExistsWhereClause(year);
       query.outFields = ['LA', 'Shape_Length'];
       query.returnGeometry = true; // Need geometry to calculate width
 
@@ -155,7 +166,7 @@ export class NetworkDataService {
     try {
       // Query all features with width data
       const query = this.roadLayer.createQuery();
-      query.where = `HasData_${year} = 1`;
+      query.where = this.buildDataExistsWhereClause(year);
       query.outFields = ['Shape_Length'];
       query.returnGeometry = true;
 
@@ -211,7 +222,7 @@ export class NetworkDataService {
 
     try {
       const query = this.roadLayer.createQuery();
-      query.where = `HasData_${year} = 1`;
+      query.where = this.buildDataExistsWhereClause(year);
       query.outFields = ['LA', 'Shape_Length'];
       query.returnGeometry = false;
 

@@ -67,6 +67,17 @@ const PerformanceSummaryTables: React.FC<PerformanceSummaryTablesProps> = ({
   ];
 
   /**
+   * Build a WHERE clause to check if data exists for a given year
+   * Uses KPI field existence instead of HasData field (which may not exist for all years)
+   */
+  const buildDataExistsWhereClause = (targetYear: number): string => {
+    // Check if any of the primary KPI fields exist for this year
+    // Using AIRI (IRI) as the primary indicator since it's always collected
+    const primaryField = `AIRI_${targetYear}`;
+    return `${primaryField} IS NOT NULL`;
+  };
+
+  /**
    * Calculate average for a KPI
    */
   const calculateAverage = async (kpi: KPIKey, targetYear: number): Promise<number> => {
@@ -101,8 +112,9 @@ const PerformanceSummaryTables: React.FC<PerformanceSummaryTablesProps> = ({
     if (!roadLayer) return 0;
 
     const whereClause = buildSubgroupWhereClause(subgroupCode);
+    const dataExistsClause = buildDataExistsWhereClause(targetYear);
     const query = roadLayer.createQuery();
-    query.where = `${whereClause} AND HasData_${targetYear} = 1`;
+    query.where = `${whereClause} AND ${dataExistsClause}`;
     query.outStatistics = [{
       statisticType: 'sum',
       onStatisticField: 'Shape_Length',
@@ -131,7 +143,7 @@ const PerformanceSummaryTables: React.FC<PerformanceSummaryTablesProps> = ({
     try {
       // Get unique Local Authorities
       const laQuery = roadLayer.createQuery();
-      laQuery.where = `HasData_${targetYear} = 1`;
+      laQuery.where = buildDataExistsWhereClause(targetYear);
       laQuery.outFields = ['LA'];
       laQuery.returnDistinctValues = true;
       laQuery.returnGeometry = false;
@@ -167,8 +179,9 @@ const PerformanceSummaryTables: React.FC<PerformanceSummaryTablesProps> = ({
 
         for (const sg of subgroups) {
           const sgWhere = buildSubgroupWhereClause(sg.code);
+          const dataExistsClause = buildDataExistsWhereClause(targetYear);
           const query = roadLayer.createQuery();
-          query.where = `${sgWhere} AND LA = '${la}' AND HasData_${targetYear} = 1`;
+          query.where = `${sgWhere} AND LA = '${la}' AND ${dataExistsClause}`;
           query.outStatistics = [{
             statisticType: 'sum',
             onStatisticField: 'Shape_Length',

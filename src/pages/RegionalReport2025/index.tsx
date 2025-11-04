@@ -1,5 +1,5 @@
 // src/pages/RegionalReport2025/index.tsx
-import React, { useState, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Layout, Menu, Typography, theme, Card, Space, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -8,6 +8,7 @@ import {
   AppstoreOutlined,
   ExperimentOutlined
 } from '@ant-design/icons';
+import useAppStore from '@/store/useAppStore';
 
 // Lazy load section components
 const NetworkOverviewSection = lazy(() => import('@/components/report/section1/NetworkOverviewSection'));
@@ -22,6 +23,14 @@ type MenuItem = Required<MenuProps>['items'][number];
 const RegionalReport2025: React.FC = () => {
   const { token } = theme.useToken();
   const [selectedSection, setSelectedSection] = useState<string>('section1');
+  const { initializeLayersOnly, roadLayer } = useAppStore();
+
+  // Initialize layers when component mounts
+  useEffect(() => {
+    if (!roadLayer) {
+      initializeLayersOnly();
+    }
+  }, [initializeLayersOnly, roadLayer]);
 
   // Define report sections
   const menuItems: MenuItem[] = [

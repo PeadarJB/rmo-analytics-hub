@@ -32,6 +32,114 @@ export const RENDERER_CONFIG = {
   lineWidth: 4
 };
 
+// ============================================================================
+// 🆕 PHASE 1: DIRECT FEATURE LAYER URLs
+// ============================================================================
+/**
+ * Direct Feature Layer URLs for improved performance and reliability.
+ *
+ * These URLs allow the application to connect directly to hosted feature layers,
+ * bypassing WebMap initialization. This provides:
+ * - Faster data loading (no WebMap overhead)
+ * - More reliable queries (no layer title matching)
+ * - Independent operation of map and report components
+ *
+ * @see Documentation: docs/LAYER_ARCHITECTURE.md
+ *
+ * 🔧 HOW TO OBTAIN THESE URLs:
+ * 1. Log into ArcGIS Online: https://www.arcgis.com/
+ * 2. Navigate to Content > My Content (or your organization's content)
+ * 3. Find each layer and click on it
+ * 4. Click "View" to open the item details page
+ * 5. On the right side, find the "URL" field
+ * 6. Copy the complete URL including the layer index (e.g., /FeatureServer/0)
+ *
+ * ⚠️ IMPORTANT NOTES:
+ * - URLs must include the full path including /FeatureServer/[layer_index]
+ * - The layer index (0, 1, 2, etc.) identifies which layer in the service
+ * - Titles should match the existing layer titles in the WebMap for compatibility
+ * - These URLs should point to the SAME layers as those in the WebMap
+ */
+export const FEATURE_LAYER_URLS = {
+  /**
+   * Road Network Layer
+   * Primary data source containing road segments with condition metrics
+   *
+   * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
+   * Example format: 'https://services.arcgis.com/{org-id}/arcgis/rest/services/{service-name}/FeatureServer/0'
+   */
+  roadNetwork: {
+    url: 'PLACEHOLDER_ROAD_NETWORK_URL', // 🔴 REPLACE WITH ACTUAL URL
+    title: 'RoadNetwork Temporal 2011 2025', // Match WebMap layer title
+    description: 'Line features representing regional road network segments (100m each)',
+  },
+
+  /**
+   * Road Network Swipe Layer
+   * Duplicate layer used for temporal comparison in swipe widget
+   * This may be the same URL as roadNetwork if using a single layer
+   *
+   * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
+   */
+  roadNetworkSwipe: {
+    url: 'PLACEHOLDER_ROAD_NETWORK_SWIPE_URL', // 🔴 REPLACE WITH ACTUAL URL
+    title: 'RoadNetwork Temporal 2011 2025', // Match WebMap layer title
+    description: 'Duplicate road network layer for swipe comparison',
+  },
+
+  /**
+   * Local Authority Polygon Layer
+   * Contains pre-aggregated statistics at LA (county) level
+   *
+   * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
+   */
+  laPolygon: {
+    url: 'PLACEHOLDER_LA_POLYGON_URL', // 🔴 REPLACE WITH ACTUAL URL
+    title: 'RMO LA data', // Match WebMap layer title
+    description: 'Polygon features for Local Authority boundaries with aggregated metrics',
+  },
+} as const;
+
+/**
+ * Layer Loading Strategy Configuration
+ *
+ * Controls how layers are loaded in the application:
+ * - 'direct': Load layers directly from FEATURE_LAYER_URLS (fastest, requires valid URLs)
+ * - 'webmap': Load layers from WebMap configuration (legacy method, slower)
+ * - 'hybrid': Try direct loading first, fall back to WebMap if it fails (recommended)
+ *
+ * Can be overridden via URL parameter: ?layerStrategy=direct|webmap|hybrid
+ */
+export const LAYER_LOADING_CONFIG = {
+  /**
+   * Default strategy for loading layers
+   * 'hybrid' is recommended for production (tries direct, falls back to webmap)
+   */
+  defaultStrategy: 'hybrid' as 'direct' | 'webmap' | 'hybrid',
+
+  /**
+   * Timeout for direct layer loading attempts (milliseconds)
+   * If direct loading takes longer than this, fall back to WebMap in hybrid mode
+   */
+  directLoadTimeout: 5000,
+
+  /**
+   * Enable fallback to WebMap in hybrid mode
+   * Set to false to force direct-only loading
+   */
+  enableFallback: true,
+
+  /**
+   * Log loading strategy performance metrics to console
+   * Useful for debugging and optimization
+   */
+  enablePerformanceLogging: true,
+} as const;
+
+// ============================================================================
+// END PHASE 1 ADDITIONS
+// ============================================================================
+
 
 /**
  * Defines the structure for a selectable layer in the swipe panel.

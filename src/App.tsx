@@ -7,6 +7,7 @@ import useAppStore from '@/store/useAppStore';
 import { CONFIG } from '@/config/appConfig';
 import { routes } from '@/routes';
 import NavigationSider from '@/components/NavigationSider';
+import EnhancedLoadingIndicator from '@/components/EnhancedLoadingIndicator';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -90,6 +91,9 @@ const AppContent: React.FC = () => {
           </Suspense>
         </Content>
       </Layout>
+
+      {/* Phase 3: Enhanced Loading Indicator with Progress Tracking */}
+      <EnhancedLoadingIndicator fullscreen={true} />
     </Layout>
   );
 };

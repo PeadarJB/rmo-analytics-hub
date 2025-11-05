@@ -119,6 +119,7 @@ const SubgroupDistributionCharts: React.FC<SubgroupDistributionChartsProps> = ({
 
   /**
    * Fetch distribution data for a specific KPI and subgroup
+   * FIXED: Uses segment count × 100m instead of Shape_Length field
    */
   const fetchSubgroupDistribution = async (
     kpi: KPIKey,
@@ -135,36 +136,37 @@ const SubgroupDistributionCharts: React.FC<SubgroupDistributionChartsProps> = ({
     // Query all features in this subgroup
     const query = roadLayer.createQuery();
     query.where = `${whereClause} AND ${classFieldName} IS NOT NULL`;
-    query.outFields = [classFieldName, 'Shape_Length'];
+    query.outFields = [classFieldName]; // FIXED: Removed 'Shape_Length' from outFields
     query.returnGeometry = false;
 
     try {
       const result = await roadLayer.queryFeatures(query);
 
-      // Calculate total length
-      const totalLength = result.features.reduce(
-        (sum, f) => sum + (f.attributes.Shape_Length as number || 0),
-        0
-      ) / 1000; // Convert to km
+      // Calculate total length using segment count × 100m
+      const totalLength = result.features.length * 0.1; // Each segment = 0.1 km
 
       // Group by condition class and calculate lengths
-      const classLengths: Record<string, number> = {};
       const conditionClasses = getConditionClasses(kpi);
 
-      // Initialize all classes with 0
+      // Count segments by class
+      const classCounts: Record<string, number> = {};
       conditionClasses.forEach(cls => {
-        classLengths[cls] = 0;
+        classCounts[cls] = 0;
       });
 
-      // Sum lengths by class
       result.features.forEach(feature => {
         const classValue = feature.attributes[classFieldName] as number;
-        const length = (feature.attributes.Shape_Length as number || 0) / 1000; // km
         const label = getClassLabel(kpi, classValue);
 
         if (label !== 'Unknown') {
-          classLengths[label] = (classLengths[label] || 0) + length;
+          classCounts[label] = (classCounts[label] || 0) + 1;
         }
+      });
+
+      // Convert counts to lengths
+      const classLengths: Record<string, number> = {};
+      conditionClasses.forEach(cls => {
+        classLengths[cls] = classCounts[cls] * 0.1; // segments × 0.1 km
       });
 
       // Convert to percentages

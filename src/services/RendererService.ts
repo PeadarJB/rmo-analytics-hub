@@ -389,4 +389,152 @@ export default class RendererService {
     console.log('\nCached Keys:', stats.keys);
     console.log('\n');
   }
+
+  /**
+   * Apply renderer to a layer with verification and retry logic
+   * This ensures the renderer is actually applied and visible
+   *
+   * @param layer - Feature layer to apply renderer to
+   * @param renderer - ClassBreaksRenderer to apply
+   * @param options - Application options
+   * @returns Promise that resolves when renderer is applied
+   */
+  static async applyRendererWithVerification(
+    layer: __esri.FeatureLayer,
+    renderer: ClassBreaksRenderer,
+    options?: {
+      maxRetries?: number;
+      retryDelay?: number;
+      logProgress?: boolean;
+    }
+  ): Promise<void> {
+    const maxRetries = options?.maxRetries || 3;
+    const retryDelay = options?.retryDelay || 100;
+    const logProgress = options?.logProgress !== false;
+
+    if (logProgress) {
+      console.log('[RendererService] Applying renderer to layer:', layer.title);
+    }
+
+    // Ensure layer is loaded
+    if (!layer.loaded) {
+      if (logProgress) {
+        console.log('[RendererService] Waiting for layer to load...');
+      }
+      await layer.load();
+    }
+
+    let attempt = 0;
+    let success = false;
+
+    while (attempt < maxRetries && !success) {
+      attempt++;
+
+      try {
+        // Apply renderer
+        (layer as any).renderer = renderer.clone();
+
+        // Wait a moment for the renderer to be applied
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+
+        // Verify renderer was applied
+        const appliedRenderer = (layer as any).renderer;
+        if (appliedRenderer && appliedRenderer.type === 'class-breaks') {
+          success = true;
+          if (logProgress) {
+            console.log(`[RendererService] ✅ Renderer applied successfully (attempt ${attempt})`);
+          }
+        } else {
+          if (logProgress) {
+            console.warn(`[RendererService] ⚠️ Renderer not applied correctly (attempt ${attempt})`);
+          }
+        }
+      } catch (error) {
+        console.error(`[RendererService] Error applying renderer (attempt ${attempt}):`, error);
+      }
+
+      if (!success && attempt < maxRetries) {
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
+    if (!success) {
+      throw new Error(`Failed to apply renderer after ${maxRetries} attempts`);
+    }
+
+    // Force layer refresh to ensure visual update
+    try {
+      layer.refresh();
+      if (logProgress) {
+        console.log('[RendererService] Layer refreshed');
+      }
+    } catch (error) {
+      console.warn('[RendererService] Could not refresh layer:', error);
+    }
+  }
+
+  /**
+   * Wait for a layer to be ready for rendering
+   * Checks that layer is loaded and has features
+   *
+   * @param layer - Feature layer to check
+   * @param timeout - Maximum wait time in ms (default: 5000)
+   * @returns Promise that resolves when layer is ready
+   */
+  static async waitForLayerReady(
+    layer: __esri.FeatureLayer,
+    timeout: number = 5000
+  ): Promise<void> {
+    const startTime = Date.now();
+
+    console.log('[RendererService] Waiting for layer to be ready:', layer.title);
+
+    // Wait for layer to load
+    if (!layer.loaded) {
+      await layer.load();
+    }
+
+    // Wait for layer to have a valid extent (indicates features are loaded)
+    while (!layer.fullExtent && (Date.now() - startTime) < timeout) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (!layer.fullExtent) {
+      console.warn('[RendererService] Layer extent not available within timeout');
+    } else {
+      console.log('[RendererService] ✅ Layer is ready');
+    }
+  }
+
+  /**
+   * Log current renderer state for debugging
+   *
+   * @param layer - Feature layer to inspect
+   */
+  static logRendererState(layer: __esri.FeatureLayer | null): void {
+    if (!layer) {
+      console.log('[RendererService] No layer provided');
+      return;
+    }
+
+    console.log('[RendererService] Layer State:', {
+      title: layer.title,
+      loaded: layer.loaded,
+      visible: layer.visible,
+      hasRenderer: !!(layer as any).renderer,
+      rendererType: (layer as any).renderer?.type || 'none',
+      hasExtent: !!layer.fullExtent,
+      featureCount: (layer.source as any)?.length || 'unknown'
+    });
+
+    const renderer = (layer as any).renderer;
+    if (renderer && renderer.type === 'class-breaks') {
+      console.log('[RendererService] Renderer Details:', {
+        field: renderer.field,
+        classBreakInfos: renderer.classBreakInfos?.length || 0,
+        defaultSymbol: !!renderer.defaultSymbol
+      });
+    }
+  }
 }

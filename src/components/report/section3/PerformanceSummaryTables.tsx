@@ -107,6 +107,7 @@ const PerformanceSummaryTables: React.FC<PerformanceSummaryTablesProps> = ({
 
   /**
    * Calculate total length for a subgroup
+   * FIXED: Uses segment count × 100m instead of Shape_Length field
    */
   const calculateSubgroupLength = async (subgroupCode: number, targetYear: number): Promise<number> => {
     if (!roadLayer) return 0;
@@ -115,18 +116,10 @@ const PerformanceSummaryTables: React.FC<PerformanceSummaryTablesProps> = ({
     const dataExistsClause = buildDataExistsWhereClause(targetYear);
     const query = roadLayer.createQuery();
     query.where = `${whereClause} AND ${dataExistsClause}`;
-    query.outStatistics = [{
-      statisticType: 'sum',
-      onStatisticField: 'Shape_Length',
-      outStatisticFieldName: 'total_length'
-    }];
 
     try {
-      const result = await roadLayer.queryFeatures(query);
-      if (result.features.length > 0) {
-        const totalMeters = result.features[0].attributes.total_length as number;
-        return Math.round((totalMeters / 1000) * 10) / 10; // Convert to km
-      }
+      const count = await roadLayer.queryFeatureCount(query);
+      return Math.round((count * 0.1) * 10) / 10; // count × 0.1 km
     } catch (err) {
       console.error(`Error calculating subgroup length:`, err);
     }
@@ -182,25 +175,17 @@ const PerformanceSummaryTables: React.FC<PerformanceSummaryTablesProps> = ({
           const dataExistsClause = buildDataExistsWhereClause(targetYear);
           const query = roadLayer.createQuery();
           query.where = `${sgWhere} AND LA = '${la}' AND ${dataExistsClause}`;
-          query.outStatistics = [{
-            statisticType: 'sum',
-            onStatisticField: 'Shape_Length',
-            outStatisticFieldName: 'total_length'
-          }];
 
           try {
-            const result = await roadLayer.queryFeatures(query);
-            if (result.features.length > 0) {
-              const length = result.features[0].attributes.total_length as number;
-              const lengthKm = Math.round((length / 1000) * 10) / 10;
+            const count = await roadLayer.queryFeatureCount(query);
+            const lengthKm = Math.round((count * 0.1) * 10) / 10; // Each segment is 0.1 km
 
-              // Type-safe assignment
-              if (sg.field === 'formerNational') breakdown.formerNational = lengthKm;
-              else if (sg.field === 'dublin') breakdown.dublin = lengthKm;
-              else if (sg.field === 'cityTown') breakdown.cityTown = lengthKm;
-              else if (sg.field === 'peat') breakdown.peat = lengthKm;
-              else if (sg.field === 'rural') breakdown.rural = lengthKm;
-            }
+            // Type-safe assignment
+            if (sg.field === 'formerNational') breakdown.formerNational = lengthKm;
+            else if (sg.field === 'dublin') breakdown.dublin = lengthKm;
+            else if (sg.field === 'cityTown') breakdown.cityTown = lengthKm;
+            else if (sg.field === 'peat') breakdown.peat = lengthKm;
+            else if (sg.field === 'rural') breakdown.rural = lengthKm;
           } catch (err) {
             console.error(`Error querying ${sg.field} for ${la}:`, err);
           }

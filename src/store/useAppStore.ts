@@ -21,8 +21,7 @@ import LARendererService from '@/services/LARendererService';
 import QueryService from '@/services/QueryService';
 import StatisticsService from '@/services/StatisticsService';
 import RendererService from '@/services/RendererService';
-// 🆕 PHASE 3: Import LayerService
-import LayerService, { LayerStrategy, LayerLoadResult } from '@/services/LayerService';
+import LayerService from '@/services/LayerService';
 import type { FilterState, SummaryStatistics } from '@/types';
 
 interface ChartSelection {
@@ -34,16 +33,7 @@ interface ChartSelection {
 
 type ThemeMode = 'light' | 'dark';
 
-// 🆕 PHASE 3: Layer loading state interface
-interface LayerLoadingState {
-  strategy: LayerStrategy;
-  isLoading: boolean;
-  progress: number; // 0-100
-  currentStep: string;
-  loadTimeMs: number;
-  fallbackUsed: boolean;
-  errors: string[];
-}
+// REMOVED: LayerLoadingState interface - no longer using hybrid loading
 
 interface AppState {
   loading: boolean;
@@ -87,13 +77,9 @@ interface AppState {
   laLayerVisible: boolean;
   laMetricType: LAMetricType;
 
-  // 🆕 PHASE 3: Layer Loading State
-  layerLoadingState: LayerLoadingState;
-  layerStrategy: LayerStrategy;
-
   // Actions
-  initializeMap: (containerId: string) => Promise<void>;
-  initializeLayersOnly: () => Promise<void>;
+  initializeMapWithWebMap: (containerId: string) => Promise<void>;
+  initializeLayersDirectly: () => Promise<void>;
   setError: (err: string | null) => void;
   setThemeMode: (mode: ThemeMode) => void;
 
@@ -127,14 +113,6 @@ interface AppState {
   updateLALayerRenderer: () => Promise<void>;
   enterSwipeMode: () => void;
   exitSwipeMode: () => void;
-
-  // 🆕 PHASE 3: New Actions
-  setLayerStrategy: (strategy: LayerStrategy) => void;
-  retryLayerLoad: () => Promise<void>;
-  getLayerPerformanceMetrics: () => {
-    avgTimes: Record<LayerStrategy, number>;
-    successRates: Record<LayerStrategy, number>;
-  };
 }
 
 const initialFilters: FilterState = {
@@ -142,17 +120,6 @@ const initialFilters: FilterState = {
   subgroup: [],
   route: [],
   year: CONFIG.defaultYear
-};
-
-// 🆕 PHASE 3: Initial layer loading state
-const initialLayerLoadingState: LayerLoadingState = {
-  strategy: LayerService.getStrategyFromURL(),
-  isLoading: false,
-  progress: 0,
-  currentStep: '',
-  loadTimeMs: 0,
-  fallbackUsed: false,
-  errors: []
 };
 
 const useAppStore = create<AppState>()(
@@ -197,365 +164,169 @@ const useAppStore = create<AppState>()(
         laLayerVisible: false,
         laMetricType: 'average',
 
-        // 🆕 PHASE 3: Initialize layer loading state
-        layerLoadingState: initialLayerLoadingState,
-        layerStrategy: initialLayerLoadingState.strategy,
-
         /**
-         * 🆕 PHASE 3: Enhanced Map Initialization with LayerService
-         * Now loads layers using direct/hybrid strategy for faster performance
+         * Initialize map for Overview Dashboard using WebMap
+         * This loads the full WebMap with all configurations
          */
-        initializeMap: async (containerId: string) => {
+        initializeMapWithWebMap: async (containerId: string) => {
           const state = get();
+
+          // Guard against double initialization
+          if (state.mapInitialized) {
+            console.log('[Map Init] Already initialized');
+            return;
+          }
+
           const container = document.getElementById(containerId);
-          
           if (!container) {
-            console.error(`Container "${containerId}" not found`);
-            return;
+            throw new Error(`Container ${containerId} not found`);
           }
 
-          if (state.mapView) {
-            if ((container as any).__esri_mapview === state.mapView) {
-              console.log('Map view already attached to this container');
-              return;
-            }
-
-            console.log('Map view exists, re-attaching to new container.');
-            (state.mapView as any).container = container;
-            return;
-          }
-
-          if (state.loading && !state.mapInitialized) {
-            console.log('Map initialization already in progress');
-            return;
-          }
+          set({ loading: true, loadingMessage: 'Loading WebMap...' });
 
           try {
-            set({ 
-              loading: true, 
-              loadingMessage: 'Initializing map...', 
-              error: null, 
-              mapInitialized: false,
-              layerLoadingState: {
-                ...state.layerLoadingState,
-                isLoading: true,
-                progress: 10,
-                currentStep: 'Loading layers...',
-                errors: []
-              }
-            });
+            console.log('[Map Init] Starting WebMap initialization...');
 
-            // 🆕 PHASE 3: Load layers using LayerService
-            console.log(`[Map Init] Loading layers with strategy: ${state.layerStrategy}`);
-            
-            set({ 
-              loadingMessage: `Loading layers (${state.layerStrategy})...`,
-              layerLoadingState: {
-                ...state.layerLoadingState,
-                progress: 25,
-                currentStep: `Loading via ${state.layerStrategy} strategy...`
-              }
-            });
-
-            const layerResult: LayerLoadResult = await LayerService.loadLayers(
-              state.layerStrategy,
-              {
-                enableLogging: true,
-                timeout: 10000
-              }
-            );
-
-            if (!layerResult.roadLayer) {
-              throw new Error('Failed to load required layers');
-            }
-
-            console.log(`[Map Init] Layers loaded in ${layerResult.loadTimeMs}ms using ${layerResult.strategy}`);
-            
-            set({
-              layerLoadingState: {
-                strategy: layerResult.strategy,
-                isLoading: true,
-                progress: 60,
-                currentStep: 'Initializing map view...',
-                loadTimeMs: layerResult.loadTimeMs,
-                fallbackUsed: layerResult.fallbackUsed,
-                errors: layerResult.errors
-              }
-            });
-
-            // Initialize map view
-            if ((container as any).__esri_mapview) {
-              const existingView = (container as any).__esri_mapview;
-              if (existingView && existingView.destroy) {
-                existingView.destroy();
-              }
-              delete (container as any).__esri_mapview;
-            }
-            
-            console.log('[Map Init] Initializing map view...');
+            // Load map using WebMap configuration
             const { view, webmap } = await MapViewService.initializeMapView(
               containerId,
               CONFIG.webMapId
             );
 
-            // Store reference on container
-            (container as any).__esri_mapview = view;
+            // Extract layers from WebMap
+            const roadLayer = webmap.layers.find(
+              l => l.title === CONFIG.roadLayerTitle
+            ) as FeatureLayer;
 
-            set({
-              layerLoadingState: {
-                ...get().layerLoadingState,
-                progress: 90,
-                currentStep: 'Finalizing...'
-              }
-            });
+            const roadLayerSwipe = webmap.layers.find(
+              l => l.title === CONFIG.roadLayerSwipeTitle
+            ) as FeatureLayer;
 
-            // Configure LA layer if available
-            if (layerResult.laLayer) {
-              console.log('[Map Init] Configuring LA layer');
-              layerResult.laLayer.visible = false;
-              layerResult.laLayer.opacity = 0.7;
-              webmap.layers.reorder(layerResult.laLayer, 0);
+            const laLayer = webmap.layers.find(
+              l => l.title === CONFIG.laLayerTitle
+            ) as FeatureLayer;
+
+            if (!roadLayer) {
+              throw new Error('Road network layer not found in WebMap');
             }
 
-            // Store all state
+            // Wait for road layer to load
+            await roadLayer.load();
+            console.log('[Map Init] Road layer loaded from WebMap');
+
+            // Configure LA layer
+            if (laLayer) {
+              laLayer.visible = false;
+              laLayer.opacity = 0.7;
+              webmap.layers.reorder(laLayer, 0);
+            }
+
+            // Store state
             set({
               mapView: view,
               webmap,
-              roadLayer: layerResult.roadLayer,
-              roadLayerSwipe: layerResult.roadLayerSwipe,
+              roadLayer,
+              roadLayerSwipe,
+              laLayer,
               initialExtent: view.extent ?? null,
-              laLayer: layerResult.laLayer,
               loading: false,
               loadingMessage: null,
               mapInitialized: true,
-              error: null,
-              layerLoadingState: {
-                ...get().layerLoadingState,
-                isLoading: false,
-                progress: 95,
-                currentStep: 'Applying symbology...'
-              }
+              error: null
             });
 
-            // PHASE 3 FIX: Wait for layer to be fully ready before applying renderer
             console.log('[Map Init] Waiting for road layer to be ready for rendering...');
-            try {
-              await RendererService.waitForLayerReady(layerResult.roadLayer, 5000);
-              console.log('[Map Init] Road layer is ready');
-            } catch (error) {
-              console.warn('[Map Init] Layer readiness check timed out, proceeding anyway:', error);
-            }
+            await RendererService.waitForLayerReady(roadLayer);
+            console.log('[Map Init] Road layer is ready');
 
-            // PHASE 3 FIX: Apply renderer with explicit verification
+            // Apply initial renderer
             console.log('[Map Init] Applying initial renderer...');
-            try {
-              const { activeKpi, themeMode } = get();
-              const year = get().validateAndFixFilters().year;
+            const success = await RendererService.applyRenderer(
+              roadLayer,
+              state.activeKpi,
+              state.currentFilters.year,
+              state.themeMode
+            );
 
-              // Create renderer
-              const renderer = RendererService.createRenderer(activeKpi, year, themeMode, true);
-
-              // Apply with verification
-              await RendererService.applyRendererWithVerification(
-                layerResult.roadLayer,
-                renderer,
-                {
-                  maxRetries: 3,
-                  retryDelay: 150,
-                  logProgress: true
-                }
-              );
-
+            if (!success) {
+              console.error('[Map Init] Failed to apply initial renderer');
+            } else {
               console.log('[Map Init] ✅ Initial renderer applied successfully');
-
-              // Log renderer state for debugging
-              RendererService.logRendererState(layerResult.roadLayer);
-
-            } catch (error) {
-              console.error('[Map Init] ⚠️ Failed to apply initial renderer:', error);
-              // Don't fail initialization if renderer application fails
-              // User can manually change KPI to trigger renderer update
             }
 
-            // Update progress to 100%
-            set({
-              layerLoadingState: {
-                ...get().layerLoadingState,
-                progress: 100,
-                currentStep: 'Complete'
-              }
-            });
-
-            // Preload other renderers in background (don't await)
-            RendererService.preloadAllRenderers(get().themeMode).catch(err =>
+            // Preload renderers in background
+            RendererService.preloadAllRenderers(state.themeMode).catch(err =>
               console.warn('Background renderer preloading failed:', err)
             );
 
-            // Show success message
-            const strategyLabel = layerResult.strategy.charAt(0).toUpperCase() + layerResult.strategy.slice(1);
-            const fallbackNote = layerResult.fallbackUsed ? ' (with fallback)' : '';
-            message.success(
-              `Map loaded in ${layerResult.loadTimeMs}ms via ${strategyLabel}${fallbackNote}`,
-              3
-            );
-
             console.log('✅ Map initialization completed successfully');
+            message.success('Map loaded successfully');
 
           } catch (e: any) {
-            console.error('❌ Map initialization error:', e);
+            console.error('Map initialization error:', e);
             const errorMsg = e?.message || 'Failed to initialize map';
-            set({ 
-              error: errorMsg, 
+            set({
+              error: errorMsg,
               loading: false,
               loadingMessage: null,
-              mapInitialized: false,
-              layerLoadingState: {
-                ...get().layerLoadingState,
-                isLoading: false,
-                progress: 0,
-                currentStep: 'Failed',
-                errors: [errorMsg]
-              }
+              mapInitialized: false
             });
             message.error(errorMsg);
           }
         },
 
         /**
-         * 🆕 PHASE 3: Enhanced Layer-Only Initialization with LayerService
-         * Used by report pages that need data but no map view
+         * Initialize layers only for Report pages using direct loading
+         * This does NOT create a map view, only loads the feature layers
          */
-        initializeLayersOnly: async () => {
+        initializeLayersDirectly: async () => {
           const state = get();
 
-          // Guard: Skip if already loaded
-          if (state.roadLayer) {
-            console.log('[Layers Only] Layers already initialized');
+          if (state.roadLayer && state.roadLayer.loaded) {
+            console.log('[Layer Init] Layers already loaded');
             return;
           }
 
-          // If map is already initialized, layers are available
-          if (state.mapInitialized) {
-            console.log('[Layers Only] Map already initialized, layers available');
-            return;
-          }
+          set({ loading: true, loadingMessage: 'Loading data layers...' });
 
           try {
-            set({ 
-              loading: true, 
-              loadingMessage: 'Loading data layers...', 
-              error: null,
-              layerLoadingState: {
-                ...state.layerLoadingState,
-                isLoading: true,
-                progress: 20,
-                currentStep: 'Loading layers for report...',
-                errors: []
-              }
+            console.log('[Layer Init] Loading layers directly...');
+
+            // Use LayerService to load layers directly
+            const layerResult = await LayerService.loadLayers('direct', {
+              enableLogging: true,
+              timeout: 10000
             });
 
-            console.log(`[Layers Only] Loading layers with strategy: ${state.layerStrategy}`);
-
-            // 🆕 PHASE 3: Use LayerService for fast loading
-            const result: LayerLoadResult = await LayerService.loadLayers(
-              state.layerStrategy,
-              {
-                enableLogging: true,
-                timeout: 15000 // Longer timeout for reports
-              }
-            );
-
-            if (!result.roadLayer) {
-              throw new Error('Failed to load layers for report');
+            if (!layerResult.roadLayer) {
+              throw new Error('Failed to load road network layer');
             }
 
-            console.log(`[Layers Only] Layers loaded in ${result.loadTimeMs}ms using ${result.strategy}`);
+            console.log(`[Layer Init] Layers loaded in ${layerResult.loadTimeMs}ms`);
 
+            // Store layers
             set({
-              roadLayer: result.roadLayer,
-              roadLayerSwipe: result.roadLayerSwipe,
-              laLayer: result.laLayer,
+              roadLayer: layerResult.roadLayer,
+              roadLayerSwipe: layerResult.roadLayerSwipe,
+              laLayer: layerResult.laLayer,
               loading: false,
               loadingMessage: null,
-              error: null,
-              layerLoadingState: {
-                strategy: result.strategy,
-                isLoading: false,
-                progress: 100,
-                currentStep: 'Complete',
-                loadTimeMs: result.loadTimeMs,
-                fallbackUsed: result.fallbackUsed,
-                errors: result.errors
-              }
+              error: null
             });
 
-            // Show success message
-            const strategyLabel = result.strategy.charAt(0).toUpperCase() + result.strategy.slice(1);
-            message.success(
-              `Data loaded in ${result.loadTimeMs}ms via ${strategyLabel}`,
-              2
-            );
-
-            console.log('✅ Layers initialization completed');
+            console.log('✅ Layers initialized successfully');
+            message.success('Data layers loaded successfully');
 
           } catch (e: any) {
-            console.error('❌ Layer initialization error:', e);
-            const errorMsg = e?.message || 'Failed to load layers';
-            set({ 
-              error: errorMsg, 
+            console.error('Layer initialization error:', e);
+            const errorMsg = e?.message || 'Failed to load data layers';
+            set({
+              error: errorMsg,
               loading: false,
-              loadingMessage: null,
-              layerLoadingState: {
-                ...get().layerLoadingState,
-                isLoading: false,
-                progress: 0,
-                currentStep: 'Failed',
-                errors: [errorMsg]
-              }
+              loadingMessage: null
             });
             message.error(errorMsg);
           }
-        },
-
-        // 🆕 PHASE 3: Set layer loading strategy
-        setLayerStrategy: (strategy: LayerStrategy) => {
-          console.log(`[Store] Layer strategy changed: ${get().layerStrategy} → ${strategy}`);
-          set({ layerStrategy: strategy });
-        },
-
-        // 🆕 PHASE 3: Retry layer loading
-        retryLayerLoad: async () => {
-          const state = get();
-          console.log('[Store] Retrying layer load...');
-          
-          // Reset layer state
-          set({
-            roadLayer: null,
-            roadLayerSwipe: null,
-            laLayer: null,
-            mapInitialized: false,
-            layerLoadingState: initialLayerLoadingState
-          });
-
-          // Retry initialization
-          if (state.mapView) {
-            // Has map view, use full init
-            const container = (state.mapView as any).container;
-            if (container && container.id) {
-              await get().initializeMap(container.id);
-            }
-          } else {
-            // No map view, use layers only
-            await get().initializeLayersOnly();
-          }
-        },
-
-        // 🆕 PHASE 3: Get layer performance metrics
-        getLayerPerformanceMetrics: () => {
-          return {
-            avgTimes: LayerService.getAverageLoadTimes(),
-            successRates: LayerService.getSuccessRates()
-          };
         },
 
         // ... (keep all existing methods unchanged: setError, setThemeMode, etc.)
@@ -771,8 +542,6 @@ const useAppStore = create<AppState>()(
           laMetricType: state.laMetricType,
           leftSwipeYear: state.leftSwipeYear,
           rightSwipeYear: state.rightSwipeYear,
-          // 🆕 PHASE 3: Persist layer strategy preference
-          layerStrategy: state.layerStrategy,
         })
       }
     )

@@ -104,35 +104,11 @@ export const FEATURE_LAYER_URLS = {
  * Layer Loading Strategy Configuration
  *
  * Controls how layers are loaded in the application:
- * - 'direct': Load layers directly from FEATURE_LAYER_URLS (fastest, requires valid URLs)
- * - 'webmap': Load layers from WebMap configuration (legacy method, slower)
- * - 'hybrid': Try direct loading first, fall back to WebMap if it fails (recommended)
- *
- * Can be overridden via URL parameter: ?layerStrategy=direct|webmap|hybrid
+ * - 'direct': Load layers directly from FEATURE_LAYER_URLS (fastest, used by reports)
+ * - 'webmap': Load layers from WebMap configuration (used by overview map)
  */
 export const LAYER_LOADING_CONFIG = {
-  /**
-   * Default strategy for loading layers
-   * 'hybrid' is recommended for production (tries direct, falls back to webmap)
-   */
-  defaultStrategy: 'hybrid' as 'direct' | 'webmap' | 'hybrid',
-
-  /**
-   * Timeout for direct layer loading attempts (milliseconds)
-   * If direct loading takes longer than this, fall back to WebMap in hybrid mode
-   */
-  directLoadTimeout: 5000,
-
-  /**
-   * Enable fallback to WebMap in hybrid mode
-   * Set to false to force direct-only loading
-   */
-  enableFallback: true,
-
-  /**
-   * Log loading strategy performance metrics to console
-   * Useful for debugging and optimization
-   */
+  // No default strategy - each page specifies its own
   enablePerformanceLogging: true,
 } as const;
 

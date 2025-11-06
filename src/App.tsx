@@ -8,6 +8,7 @@ import { CONFIG } from '@/config/appConfig';
 import { routes } from '@/routes';
 import NavigationSider from '@/components/NavigationSider';
 import EnhancedLoadingIndicator from '@/components/EnhancedLoadingIndicator';
+import HeaderControls from '@/components/HeaderControls';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -44,24 +45,24 @@ const AppContent: React.FC = () => {
           flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img 
-              src="/img/PMS-Logo-150x150.png" 
-              alt="PMS Logo" 
-              style={{ height: '40px', width: 'auto' }} 
+            <img
+              src="/img/PMS-Logo-150x150.png"
+              alt="PMS Logo"
+              style={{ height: '40px', width: 'auto' }}
             />
-            <Title 
-              level={4} 
-              style={{ 
-                margin: 0, 
+            <Title
+              level={4}
+              style={{
+                margin: 0,
                 color: themeMode === 'dark' ? '#F3F4F6' : '#111827'
               }}
             >
               {CONFIG.title}
             </Title>
           </div>
-          
-          {/* Header controls are rendered by child pages (e.g., OverviewDashboard) */}
-          <div id="header-controls-portal" />
+
+          {/* HEADER CONTROLS - Visible only on Overview page */}
+          <HeaderControls visible={isOverviewPage} />
         </Header>
 
         {/* Main Content Area */}

@@ -12,16 +12,33 @@ const EnhancedFilterPanel: React.FC = () => {
   const [routeOptions, setRouteOptions] = useState<string[]>([]);
   const [availableRoutes, setAvailableRoutes] = useState<string[]>([]);
   const [loadingRoutes, setLoadingRoutes] = useState<boolean>(false);
+  const [loadingUniqueValues, setLoadingUniqueValues] = useState<boolean>(false);
   const { token } = theme.useToken();
 
   // Load unique values for LA on mount
   useEffect(() => {
-    QueryService.getUniqueValues(roadLayer, ROAD_FIELDS.la).then(setLaOptions);
-    QueryService.getUniqueValues(roadLayer, ROAD_FIELDS.route).then((routes) => {
-      setRouteOptions(routes);
-      setAvailableRoutes(routes); // Initially show all routes
-    });
-  }, [roadLayer]);
+    const loadUniqueValues = async () => {
+      if (!roadLayer || !roadLayer.loaded) {
+        console.log('[FilterPanel] Waiting for layer to load...');
+        return;
+      }
+
+      try {
+        setLoadingUniqueValues(true);
+        const las = await QueryService.getUniqueValues(roadLayer, ROAD_FIELDS.la);
+        const routes = await QueryService.getUniqueValues(roadLayer, ROAD_FIELDS.route);
+        setLaOptions(las);
+        setRouteOptions(routes);
+        setAvailableRoutes(routes); // Initially show all routes
+      } catch (error) {
+        console.error('[FilterPanel] Error loading unique values:', error);
+      } finally {
+        setLoadingUniqueValues(false);
+      }
+    };
+
+    loadUniqueValues();
+  }, [roadLayer]); // Only depend on roadLayer
 
   // Update available routes when LA selection changes
   useEffect(() => {
@@ -87,9 +104,9 @@ const EnhancedFilterPanel: React.FC = () => {
         </Button>
       ]}
     >
-      {loading ? (
+      {(loading || loadingUniqueValues) ? (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
-          <Spin tip="Resetting filters..." />
+          <Spin tip={loadingUniqueValues ? "Loading filter options..." : "Resetting filters..."} />
         </div>
       ) : (
         <Space direction="vertical" style={{ width: '100%' }}>

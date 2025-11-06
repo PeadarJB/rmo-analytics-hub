@@ -8,7 +8,7 @@ import { FEATURE_LAYER_URLS, LAYER_LOADING_CONFIG, CONFIG } from '@/config/appCo
 /**
  * Layer loading strategy types
  */
-export type LayerStrategy = 'direct' | 'webmap' | 'hybrid';
+export type LayerStrategy = 'direct' | 'webmap';
 
 /**
  * Result of a layer loading operation
@@ -37,25 +37,21 @@ interface LoadMetrics {
 }
 
 /**
- * LayerService provides multiple strategies for loading ArcGIS Feature Layers.
- * 
- * Three loading strategies are supported:
+ * LayerService provides two strategies for loading ArcGIS Feature Layers.
+ *
+ * Two loading strategies are supported:
  * 1. **Direct**: Load layers directly from Feature Service URLs (fastest)
  * 2. **WebMap**: Load layers from WebMap configuration (legacy, slower)
- * 3. **Hybrid**: Try direct first, fall back to WebMap on failure (recommended)
- * 
+ *
  * @example
  * ```typescript
- * // Hybrid loading (recommended)
- * const result = await LayerService.loadLayers('hybrid');
+ * // Direct loading (recommended for reports)
+ * const result = await LayerService.loadLayers('direct');
  * if (result.roadLayer) {
  *   console.log(`Loaded in ${result.loadTimeMs}ms using ${result.strategy}`);
  * }
- * 
- * // Direct loading only
- * const result = await LayerService.loadLayers('direct');
- * 
- * // WebMap loading only
+ *
+ * // WebMap loading (recommended for map views)
  * const result = await LayerService.loadLayers('webmap');
  * ```
  */
@@ -65,28 +61,24 @@ export default class LayerService {
 
   /**
    * Main entry point for loading layers with specified strategy
-   * 
-   * @param strategy - Loading strategy to use ('direct', 'webmap', or 'hybrid')
+   *
+   * @param strategy - Loading strategy to use ('direct' or 'webmap')
    * @param options - Optional configuration
    * @returns Promise resolving to LayerLoadResult
    */
   static async loadLayers(
-    strategy: LayerStrategy = LAYER_LOADING_CONFIG.defaultStrategy,
+    strategy: LayerStrategy = 'direct',
     options: {
       timeout?: number;
-      enableFallback?: boolean;
       enableLogging?: boolean;
     } = {}
   ): Promise<LayerLoadResult> {
     const {
-      timeout = LAYER_LOADING_CONFIG.directLoadTimeout,
-      enableFallback = LAYER_LOADING_CONFIG.enableFallback,
-      enableLogging = LAYER_LOADING_CONFIG.enablePerformanceLogging
+      timeout = 10000,
+      enableLogging = true
     } = options;
 
     const startTime = performance.now();
-    const errors: string[] = [];
-    let fallbackUsed = false;
 
     try {
       let result: LayerLoadResult;
@@ -98,38 +90,6 @@ export default class LayerService {
 
         case 'webmap':
           result = await this.loadLayersFromWebMap();
-          break;
-
-        case 'hybrid':
-          // Try direct first
-          try {
-            result = await this.loadLayersDirect(timeout);
-            
-            // Check if all required layers loaded successfully
-            if (!result.roadLayer || !result.laLayer) {
-              throw new Error('Direct loading failed: missing required layers');
-            }
-            
-            if (enableLogging) {
-              console.log(`[LayerService] Hybrid: Direct loading succeeded in ${result.loadTimeMs}ms`);
-            }
-          } catch (directError: any) {
-            // Fall back to WebMap if enabled
-            if (enableFallback) {
-              fallbackUsed = true;
-              errors.push(`Direct loading failed: ${directError.message}`);
-              
-              if (enableLogging) {
-                console.warn('[LayerService] Hybrid: Direct loading failed, falling back to WebMap', directError);
-              }
-              
-              result = await this.loadLayersFromWebMap();
-              result.fallbackUsed = true;
-              result.errors = [...errors, ...result.errors];
-            } else {
-              throw directError;
-            }
-          }
           break;
 
         default:
@@ -364,20 +324,20 @@ export default class LayerService {
 
   /**
    * Get the layer loading strategy from URL parameters or use default
-   * Supports: ?layerStrategy=direct|webmap|hybrid
-   * 
+   * Supports: ?layerStrategy=direct|webmap
+   *
    * @returns Layer strategy to use
    */
   static getStrategyFromURL(): LayerStrategy {
     const params = new URLSearchParams(window.location.search);
     const strategy = params.get('layerStrategy') as LayerStrategy | null;
 
-    if (strategy && ['direct', 'webmap', 'hybrid'].includes(strategy)) {
+    if (strategy && ['direct', 'webmap'].includes(strategy)) {
       console.log(`[LayerService] Using strategy from URL: ${strategy}`);
       return strategy;
     }
 
-    return LAYER_LOADING_CONFIG.defaultStrategy;
+    return 'direct'; // Default to direct loading
   }
 
   /**

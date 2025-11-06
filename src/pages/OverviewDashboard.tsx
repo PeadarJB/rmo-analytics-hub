@@ -1,111 +1,40 @@
 // src/pages/OverviewDashboard.tsx
-import React, { useEffect, useState, lazy, Suspense } from 'react';
-import { Segmented, Switch, Spin, Card } from 'antd';
+import React, { useEffect, lazy, Suspense } from 'react';
+import { Spin, Card } from 'antd';
 import useAppStore from '@/store/useAppStore';
 import { usePanelStyles } from '@/styles/styled';
 import MapWidgets from '@/components/MapWidgets';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import EnhancedFilterPanel from '@/components/EnhancedFilterPanel';
-import EnhancedStatsPanel from '@/components/EnhancedStatsPanel'; 
+import EnhancedStatsPanel from '@/components/EnhancedStatsPanel';
 import EnhancedSwipePanel from '@/components/EnhancedSwipePanel';
-import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 
 // Lazy load heavy components
 const EnhancedChartPanel = lazy(() => import('@/components/EnhancedChartPanel'));
 
 const OverviewDashboard: React.FC = () => {
   const {
-    initializeMap, themeMode, setThemeMode,
-    showFilters, setShowFilters,
-    showStats, setShowStats,
-    showChart, setShowChart, 
-    showSwipe, setShowSwipe,
-    loading, loadingMessage,
-    activeKpi, setActiveKpi
+    initializeMapWithWebMap,
+    showFilters,
+    showStats,
+    showChart,
+    showSwipe,
+    loading,
+    loadingMessage,
   } = useAppStore();
-  
-  const [isHoveringChart, setIsHoveringChart] = useState(false);
-  const { styles } = usePanelStyles();
 
-  // Preload chart component when hovering over toggle
-  useEffect(() => {
-    if (isHoveringChart) {
-      import('@/components/EnhancedChartPanel');
-    }
-  }, [isHoveringChart]);
+  const { styles } = usePanelStyles();
 
   useEffect(() => {
     const container = document.getElementById('viewDiv');
     if (container) {
-      initializeMap('viewDiv');
+      initializeMapWithWebMap('viewDiv');
     }
-  }, [initializeMap]);
-
-  // Header controls for Overview Dashboard
-  const headerControls = (
-    <div className={styles.headerRight}>
-      <Segmented<KPIKey>
-        value={activeKpi}
-        options={Object.keys(KPI_LABELS).map(k => ({ label: KPI_LABELS[k as KPIKey], value: k as KPIKey }))}
-        onChange={(v) => setActiveKpi(v as KPIKey)}
-      />
-      <Switch 
-        checked={showFilters} 
-        onChange={setShowFilters} 
-        checkedChildren="Filter" 
-        unCheckedChildren="Filter"
-      />
-      <Switch 
-        checked={showStats} 
-        onChange={setShowStats} 
-        checkedChildren="Stats" 
-        unCheckedChildren="Stats"
-      />
-      <div onMouseEnter={() => setIsHoveringChart(true)}>
-        <Switch 
-          checked={showChart} 
-          onChange={setShowChart} 
-          checkedChildren="Chart" 
-          unCheckedChildren="Chart"
-        />
-      </div>
-      <Switch 
-        checked={showSwipe} 
-        onChange={setShowSwipe} 
-        checkedChildren="Compare" 
-        unCheckedChildren="Compare"
-      />
-      <Switch
-        checked={themeMode === 'dark'}
-        onChange={(isDark) => setThemeMode(isDark ? 'dark' : 'light')}
-        checkedChildren="Dark"
-        unCheckedChildren="Light"
-      />
-    </div>
-  );
-
-  // Render header controls into portal on mount
-  useEffect(() => {
-    const portal = document.getElementById('header-controls-portal');
-    if (portal) {
-      // This will be handled by React portals in a production implementation
-      // For now, we'll render controls inline
-    }
-  }, []);
+  }, [initializeMapWithWebMap]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      {/* Render header controls at top-right of content area */}
-      <div style={{ 
-        position: 'absolute', 
-        top: '16px', 
-        right: '16px', 
-        zIndex: 10,
-        display: 'flex',
-        gap: '8px'
-      }}>
-        {headerControls}
-      </div>
+      {/* NO HEADER CONTROLS HERE - They're in App.tsx now */}
 
       <div id="viewDiv" style={{ width: '100%', height: '100%' }} />
       <MapWidgets />

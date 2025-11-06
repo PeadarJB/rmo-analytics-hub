@@ -24,14 +24,14 @@ type MenuItem = Required<MenuProps>['items'][number];
 const RegionalReport2025: React.FC = () => {
   const { token } = theme.useToken();
   const [selectedSection, setSelectedSection] = useState<string>('section1');
-  const { initializeLayersOnly, roadLayer, loading, loadingMessage } = useAppStore();
+  const { initializeLayersDirectly, roadLayer, loading, loadingMessage } = useAppStore();
 
   // Initialize layers when component mounts
   useEffect(() => {
     if (!roadLayer) {
-      initializeLayersOnly();
+      initializeLayersDirectly();
     }
-  }, [initializeLayersOnly, roadLayer]);
+  }, [initializeLayersDirectly, roadLayer]);
 
   // Define report sections
   const menuItems: MenuItem[] = [

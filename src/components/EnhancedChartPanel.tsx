@@ -1,26 +1,77 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Card, Select, Space, Spin, Alert, theme, Switch, message, Button, Tag } from 'antd';
 import { Chart, ChartConfiguration, ChartEvent, ActiveElement } from 'chart.js/auto';
+import { useDebouncedCallback } from '@/hooks/useDebounce';
 import useAppStore from '@/store/useAppStore';
-import { CONFIG, KPI_LABELS, RENDERER_CONFIG, KPI_THRESHOLDS, type KPIKey, getKPIFieldName } from '@/config/appConfig';
+import { CONFIG, RENDERER_CONFIG } from '@/config/appConfig';
+import { KPI_LABELS, type KPIKey } from '@/config/kpiConfig';
 import QueryService from '@/services/QueryService';
 import { getChartThemeColors } from '@/utils/themeHelpers';
 import StatisticsService from '@/services/StatisticsService';
-import type { GroupedConditionStats } from '@/types';
+import type { FilterState, GroupedConditionStats } from '@/types';
 import Query from '@arcgis/core/rest/support/Query';
+import type { SummaryStatistics } from '@/types';
+import {
+  ROAD_FIELDS,
+  SUBGROUP_OPTIONS,
+  getKPIFieldName
+} from '@/config/layerConfig';
 
 const groupByOptions = [
-  { label: 'Local Authority', value: CONFIG.fields.la },
-  { label: 'Route', value: CONFIG.fields.route },
+  { label: 'Local Authority', value: ROAD_FIELDS.la },
+  { label: 'Route', value: ROAD_FIELDS.route },
   { label: 'Subgroup', value: 'subgroup' } 
 ];
 
-const EnhancedChartPanel: React.FC = () => {
-  const { 
-    roadLayer, 
-    activeKpi, 
-    currentFilters, 
-    mapView, 
+const buildSubgroupWhereClause = (subgroup: string): string => {
+  const subgroupOption = SUBGROUP_OPTIONS.find(opt => 
+    opt.label === subgroup
+  );
+  
+  if (subgroupOption) {
+    // This logic is based on how subgroups are defined in the data
+    const fieldName = SUBGROUP_OPTIONS.find(o => o.code === subgroupOption.code)?.value;
+    if (fieldName) {
+      return `${fieldName} = 1`;
+    }
+  }
+  // Fallback for 'Rural' or if not found
+  if (subgroup === 'Rural') {
+    const definedSubgroups = SUBGROUP_OPTIONS
+      .filter(o => o.value !== 'Rural')
+      .map(o => `${o.value} = 0`)
+      .join(' AND ');
+    return `(${definedSubgroups})`;
+  }
+  return '1=1';
+};
+
+const buildConditionWhereClause = (
+  kpi: KPIKey,
+  year: number,
+  conditionClass: string
+): string => {
+  const classValue = {
+    'veryGood': 1,
+    'good': 2,
+    'fair': 3,
+    'poor': 4,
+    'veryPoor': 5
+  }[conditionClass];
+
+  if (classValue) {
+    const classFieldName = getKPIFieldName(kpi, year, true);
+    return `${classFieldName} = ${classValue}`;
+  }
+  return '1=1';
+};
+
+const EnhancedChartPanel: React.FC = React.memo(() => {
+  const {
+    roadLayer,
+    activeKpi,
+    currentFilters,
+    mapView,
     setFilters,
     chartSelections,
     isChartFilterActive,
@@ -32,6 +83,7 @@ const EnhancedChartPanel: React.FC = () => {
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
   const previousDefinitionExpression = useRef<string>('1=1');
+  const renderCount = useRef(0);
 
   const [groupBy, setGroupBy] = useState<string>(CONFIG.defaultGroupBy);
   const [groupedData, setGroupedData] = useState<GroupedConditionStats[]>([]);
@@ -41,6 +93,10 @@ const EnhancedChartPanel: React.FC = () => {
   const [selectedSegment, setSelectedSegment] = useState<{group: string, condition: string} | null>(null);
   const [dataStatus, setDataStatus] = useState<'loading' | 'success' | 'no-data' | 'error'>('loading');
   const [errorDetails, setErrorDetails] = useState<string>('');
+
+  // Track renders for performance monitoring
+  renderCount.current += 1;
+  console.log(`[Chart Render] #${renderCount.current}`);
 
   // Get theme-aware colors
   const themeColors = useMemo(() => 
@@ -66,108 +122,120 @@ const EnhancedChartPanel: React.FC = () => {
     }
   }, []);
 
-  // Fetch data with condition breakdowns
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+  // Data fetching logic
+  const fetchData = async (
+    layer: __esri.FeatureLayer, 
+    filters: FilterState, 
+    kpi: KPIKey, 
+    grpBy: string, 
+    isStacked: boolean
+  ) => {
+    setLoading(true);
+    setError(null);
+    setDataStatus('loading');
+
+    try {
+      let data: GroupedConditionStats[];
       
-      try {
-        setDataStatus('loading');
-        let data: GroupedConditionStats[];
-        
-        if (stackedMode) {
-          data = await StatisticsService.computeGroupedStatisticsWithConditions(
-            roadLayer,
-            currentFilters,
-            activeKpi,
-            groupBy
+      if (isStacked) {
+        data = await StatisticsService.computeGroupedStatisticsWithConditions(
+          layer,
+          filters,
+          kpi,
+          grpBy
+        );
+      } else {
+        let simpleData;
+        const kpiField = getKPIFieldName(kpi, filters.year || CONFIG.defaultYear);
+        const whereClause = (layer as any)?.definitionExpression || '1=1';
+
+        if (grpBy === 'subgroup') {
+          console.log('[Chart Debug] Fetching subgroup averages...');
+          simpleData = await QueryService.computeSubgroupStatistics(
+            layer,
+            kpiField,
+            whereClause
           );
         } else {
-          // MODIFICATION START: Add logic to handle subgroup correctly
-          let simpleData;
-          const kpiField = getKPIFieldName(activeKpi, currentFilters.year[0] || CONFIG.defaultYears[0]);
-          const whereClause = (roadLayer as any)?.definitionExpression || '1=1';
-
-          if (groupBy === 'subgroup') {
-            console.log('[Chart Debug] Fetching subgroup averages...');
-            simpleData = await QueryService.computeSubgroupStatistics(
-              roadLayer,
-              kpiField,
-              whereClause
-            );
-          } else {
-            console.log('[Chart Debug] Fetching simple averages for:', {
-              activeKpi,
-              year: currentFilters.year[0] || CONFIG.defaultYears[0],
-              groupBy,
-              definitionExpression: whereClause
-            });
-            simpleData = await QueryService.computeGroupedStatistics(
-              roadLayer,
-              kpiField,
-              groupBy,
-              whereClause
-            );
-          }
-          // MODIFICATION END
-          
-          console.log('[Chart Debug] Raw QueryService result:', simpleData);
-          
-          data = simpleData.map(d => {
-            console.log('[Chart Debug] Processing group:', d.group, 'avgValue:', d.avgValue, 'count:', d.count);
-            return {
-              group: d.group,
-              avgValue: d.avgValue || 0,
-              totalCount: d.count || 0,
-              conditions: {
-                veryGood: { count: 0, percentage: 0 },
-                good: { count: 0, percentage: 0 },
-                fair: { count: 0, percentage: 0 },
-                poor: { count: 0, percentage: 0 },
-                veryPoor: { count: 0, percentage: 0 }
-              }
-            }
+          console.log('[Chart Debug] Fetching simple averages for:', {
+            activeKpi: kpi,
+            year: filters.year || CONFIG.defaultYear,
+            groupBy: grpBy,
+            definitionExpression: whereClause
           });
-          
-          console.log('[Chart Debug] Final converted data:', data);
+          simpleData = await QueryService.computeGroupedStatistics(
+            layer,
+            kpiField,
+            grpBy,
+            whereClause
+          );
         }
         
-        data.sort((a, b) => b.avgValue - a.avgValue);
+        console.log('[Chart Debug] Raw QueryService result:', simpleData);
         
-        if (!data || data.length === 0) {
-          setDataStatus('no-data');
-          setErrorDetails(`No ${groupByOptions.find(o => o.value === groupBy)?.label || groupBy} data available for ${KPI_LABELS[activeKpi]} in the current selection.`);
-          setGroupedData([]);
-          return;
-        }
+        data = simpleData.map(d => {
+          console.log('[Chart Debug] Processing group:', d.group, 'avgValue:', d.avgValue, 'count:', d.count);
+          const partialStats: Partial<SummaryStatistics> = {
+            avgValue: d.avgValue || 0,
+            totalSegments: d.count || 0,
+          };
+          return ({
+            group: d.group,
+            stats: partialStats as SummaryStatistics
+          });
+        });
         
-        const hasValidValues = stackedMode 
-          ? data.some(d => d.totalCount > 0)
-          : data.some(d => d.avgValue && d.avgValue > 0);
-          
-        if (!hasValidValues) {
-          setDataStatus('no-data');
-          setErrorDetails(`All ${KPI_LABELS[activeKpi]} values are zero or unavailable for the current filters.`);
-        } else {
-          setDataStatus('success');
-          setErrorDetails('');
-        }
-        
-        setGroupedData(data);
-        
-      } catch (e: any) {
-        console.error('Error fetching chart data:', e);
-        setDataStatus('error');
-        setErrorDetails(e.message || 'Failed to load chart data');
-        setGroupedData([]);
-      } finally {
-        setLoading(false);
+        console.log('[Chart Debug] Final converted data:', data);
       }
-    };
+      
+      if (!data || data.length === 0) {
+        setDataStatus('no-data');
+        setErrorDetails(`No ${groupByOptions.find(o => o.value === grpBy)?.label || grpBy} data available for ${KPI_LABELS[kpi]} in the current selection.`);
+        setGroupedData([]);
+        return;
+      }
+      
+      const hasValidValues = isStacked 
+        ? data.some(d => d.stats.totalSegments > 0)
+        : data.some(d => d.stats.avgValue && d.stats.avgValue > 0);
 
-    fetchData();
-  }, [roadLayer, activeKpi, currentFilters, groupBy, stackedMode]);
+      if (!isStacked) {
+        data.sort((a, b) => (b.stats.avgValue || 0) - (a.stats.avgValue || 0));
+      }
+        
+      if (!hasValidValues) {
+        setDataStatus('no-data');
+        setErrorDetails(`All ${KPI_LABELS[kpi]} values are zero or unavailable for the current filters.`);
+      } else {
+        setDataStatus('success');
+        setErrorDetails('');
+      }
+      
+      setGroupedData(data);
+      
+    } catch (e: any) {
+      console.error('Error fetching chart data:', e);
+      setDataStatus('error');
+      setErrorDetails(e.message || 'Failed to load chart data');
+      setGroupedData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create a debounced version of the data fetcher
+  const debouncedFetchData = useDebouncedCallback(fetchData, 300);
+
+  // Effect to trigger data fetching when dependencies change
+  useEffect(() => {
+    if (!roadLayer) {
+      setDataStatus('no-data');
+      setErrorDetails('Road layer not available.');
+      setGroupedData([]);
+      return;
+    }
+    debouncedFetchData(roadLayer, currentFilters, activeKpi, groupBy, stackedMode);
+  }, [roadLayer, activeKpi, currentFilters, groupBy, stackedMode, debouncedFetchData]);
 
   const handleChartClick = useCallback(async (event: ChartEvent, elements: ActiveElement[]) => {
     if (!elements.length || !roadLayer || !mapView) return;
@@ -184,7 +252,7 @@ const EnhancedChartPanel: React.FC = () => {
       group: clickedGroup,
       condition: clickedCondition,
       kpi: activeKpi,
-      year: currentFilters.year[0] || CONFIG.defaultYears[0]
+      year: currentFilters.year || CONFIG.defaultYear
     };
     
     const isMultiSelect = event.native && (
@@ -219,26 +287,26 @@ const EnhancedChartPanel: React.FC = () => {
     
     const whereClauses = selections.map(selection => {
       const year = selection.year;
-      const kpiField = getKPIFieldName(selection.kpi, year);
-      
+
       let groupClause = '';
       if (groupBy === 'subgroup') {
         groupClause = buildSubgroupWhereClause(selection.group);
       } else {
         groupClause = `${groupBy} = '${selection.group.replace("'", "''")}'`;
       }
-      
-      const conditionClause = buildConditionWhereClause(kpiField, selection.kpi, selection.condition);
-      
+
+      const conditionClause = buildConditionWhereClause(selection.kpi, year, selection.condition);
+
       return `(${groupClause} AND ${conditionClause})`;
     });
 
     let combinedWhere = whereClauses.join(' OR ');
-    
+
     if (previousDefinitionExpression.current !== '1=1') {
       combinedWhere = `(${previousDefinitionExpression.current}) AND (${combinedWhere})`;
     }
 
+    console.log('[Chart Filter] Applying WHERE clause:', combinedWhere);
     (roadLayer as any).definitionExpression = combinedWhere;
     
     try {
@@ -257,89 +325,6 @@ const EnhancedChartPanel: React.FC = () => {
     }
   }, [roadLayer, mapView, groupBy, previousDefinitionExpression]);
 
-  const buildSubgroupWhereClause = (subgroup: string): string => {
-    const subgroupOption = CONFIG.filters.subgroup.options?.find(opt => 
-      opt.label === subgroup
-    );
-    
-    if (subgroupOption) {
-      if (subgroupOption.value === 'Rural') {
-        return '(Roads_Joined_IsFormerNa = 0 AND Roads_Joined_IsDublin = 0 AND Roads_Joined_IsCityTown = 0 AND Roads_Joined_IsPeat = 0)';
-      } else {
-        return `${subgroupOption.value} = 1`;
-      }
-    }
-    return '1=1';
-  };
-
-  const buildConditionWhereClause = (
-    kpiField: string,
-    kpi: KPIKey,
-    conditionClass: string
-  ): string => {
-    const thresholds = KPI_THRESHOLDS[kpi];
-    
-    if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
-      switch(conditionClass) {
-        case 'veryGood': 
-          return thresholds.veryGood ? `${kpiField} < ${thresholds.veryGood}` : `${kpiField} < ${thresholds.good}`;
-        case 'good': 
-          return thresholds.veryGood 
-            ? `${kpiField} >= ${thresholds.veryGood} AND ${kpiField} < ${thresholds.good}`
-            : `${kpiField} >= ${thresholds.good} AND ${kpiField} < ${thresholds.fair}`;
-        case 'fair': 
-          return `${kpiField} >= ${thresholds.good} AND ${kpiField} < ${thresholds.fair}`;
-        case 'poor': 
-          return thresholds.poor 
-            ? `${kpiField} >= ${thresholds.fair} AND ${kpiField} < ${thresholds.poor}`
-            : `${kpiField} >= ${thresholds.fair}`;
-        case 'veryPoor': 
-          return thresholds.poor ? `${kpiField} >= ${thresholds.poor}` : `${kpiField} >= ${thresholds.fair}`;
-        default: 
-          return '1=1';
-      }
-    } else if (kpi === 'csc') {
-      switch(conditionClass) {
-        case 'veryGood': 
-          return `${kpiField} > ${thresholds.good}`;
-        case 'good': 
-          return `${kpiField} > ${thresholds.fair} AND ${kpiField} <= ${thresholds.good}`;
-        case 'fair': 
-          return `${kpiField} > ${thresholds.poor!} AND ${kpiField} <= ${thresholds.fair}`;
-        case 'poor': 
-          return `${kpiField} > ${thresholds.veryPoor!} AND ${kpiField} <= ${thresholds.poor!}`;
-        case 'veryPoor': 
-          return `${kpiField} <= ${thresholds.veryPoor!}`;
-        default: 
-          return '1=1';
-      }
-    } else if (kpi === 'psci') {
-      switch(conditionClass) {
-        case 'veryGood': return `${kpiField} > 8`;
-        case 'good': return `${kpiField} > 6 AND ${kpiField} <= 8`;
-        case 'fair': return `${kpiField} > 4 AND ${kpiField} <= 6`;
-        case 'poor': return `${kpiField} > 2 AND ${kpiField} <= 4`;
-        case 'veryPoor': return `${kpiField} <= 2`;
-        default: return '1=1';
-      }
-    } else if (kpi === 'mpd') {
-      switch(conditionClass) {
-        case 'veryGood': 
-        case 'good': 
-          return `${kpiField} >= ${thresholds.good}`;
-        case 'fair': 
-          return `${kpiField} >= ${thresholds.poor} AND ${kpiField} < ${thresholds.good}`;
-        case 'poor': 
-        case 'veryPoor': 
-          return `${kpiField} < ${thresholds.poor}`;
-        default: 
-          return '1=1';
-      }
-    }
-    
-    return '1=1';
-  };
-
   useEffect(() => {
     if (roadLayer) {
       previousDefinitionExpression.current = (roadLayer as any).definitionExpression || '1=1';
@@ -348,7 +333,7 @@ const EnhancedChartPanel: React.FC = () => {
   }, [currentFilters]);
 
   // Helper function to create chart colors with theme awareness
-  const createChartColors = (conditionType: keyof typeof themeColors, groupData: GroupedConditionStats[]) => {
+  const createChartColors = useCallback((conditionType: keyof typeof themeColors, groupData: GroupedConditionStats[]) => {
     const baseColor = themeColors[conditionType];
     
     return {
@@ -367,49 +352,44 @@ const EnhancedChartPanel: React.FC = () => {
         return highlightedBars.has(key) ? 3 : 1;
       })
     };
-  };
+  }, [themeColors, highlightedBars]);
 
-  // Render chart - now depends on themeMode to trigger re-render
-  useEffect(() => {
-    if (!chartRef.current || dataStatus !== 'success' || !groupedData.length) return;
-
+  const chartDatasets = useMemo(() => {
+    if (dataStatus !== 'success' || !groupedData.length) return [];
+    
     const labels = groupedData.map(d => d.group);
-    
     let datasets: any[];
-    
     if (stackedMode) {
       datasets = [
         {
           label: 'Very Good',
-          data: groupedData.map(d => d.conditions.veryGood.percentage),
+          data: groupedData.map(d => d.stats.veryGoodPct),
           ...createChartColors('veryGood', groupedData)
         },
         {
           label: 'Good',
-          data: groupedData.map(d => d.conditions.good.percentage),
+          data: groupedData.map(d => d.stats.goodPct),
           ...createChartColors('good', groupedData)
         },
         {
           label: 'Fair',
-          data: groupedData.map(d => d.conditions.fair.percentage),
+          data: groupedData.map(d => d.stats.fairPct),
           ...createChartColors('fair', groupedData)
         },
         {
           label: 'Poor',
-          data: groupedData.map(d => d.conditions.poor.percentage),
+          data: groupedData.map(d => d.stats.poorPct),
           ...createChartColors('poor', groupedData)
         },
         {
           label: 'Very Poor',
-          data: groupedData.map(d => d.conditions.veryPoor.percentage),
+          data: groupedData.map(d => d.stats.veryPoorPct),
           ...createChartColors('veryPoor', groupedData)
         }
       ];
     } else {
-      const chartData = groupedData.map(d => d.avgValue);
+      const chartData = groupedData.map(d => d.stats.avgValue);
       console.log('[Chart Debug] Chart data for rendering:', chartData);
-      console.log('[Chart Debug] GroupedData avgValues:', groupedData.map(d => ({ group: d.group, avgValue: d.avgValue })));
-      
       datasets = [{
         label: `Average ${KPI_LABELS[activeKpi]}`,
         data: chartData,
@@ -424,12 +404,16 @@ const EnhancedChartPanel: React.FC = () => {
         console.warn('[Chart Debug] All chart values are zero or null!');
       }
     }
+    return datasets;
+  }, [groupedData, dataStatus, stackedMode, activeKpi, token, createChartColors]);
 
+  const chartConfig = useMemo(() => {
+    const labels = groupedData.map(d => d.group);
     const chartThemeColors = getChartThemeColors();
 
     const config: ChartConfiguration = {
       type: 'bar',
-      data: { labels, datasets },
+      data: { labels, datasets: chartDatasets },
       options: {
         indexAxis: 'y',
         responsive: true,
@@ -472,11 +456,14 @@ const EnhancedChartPanel: React.FC = () => {
               label: (context) => {
                 if (stackedMode) {
                   const value = context.parsed.x;
-                  const conditionKey = context.dataset.label!.toLowerCase().replace(' ', '') as keyof typeof groupedData[0]['conditions'];
-                  const count = groupedData[context.dataIndex].conditions[conditionKey].count;
+                  if (value === null) return '';
+                  const conditionKey = (context.dataset.label!.toLowerCase().replace(' ', '') + 'Count') as keyof SummaryStatistics;
+                  const count = (groupedData[context.dataIndex].stats as any)[conditionKey] || 0;
                   return `${context.dataset.label}: ${value.toFixed(1)}% (${count} segments)`;
                 }
-                return `${context.dataset.label}: ${context.parsed.x.toFixed(2)}`;
+                const xValue = context.parsed.x;
+                if (xValue === null) return '';
+                return `${context.dataset.label}: ${xValue.toFixed(2)}`;
               },
               afterLabel: stackedMode ? () => 'Click to filter map' : undefined
             }
@@ -517,19 +504,42 @@ const EnhancedChartPanel: React.FC = () => {
       }
     };
 
-    if (chartInstance.current) {
-      chartInstance.current.destroy();
+    return config;
+  }, [groupedData, chartDatasets, activeKpi, groupBy, stackedMode, selectedSegment, handleChartClick, token]);
+
+  // Initialize or update chart
+  useEffect(() => {
+    if (!chartRef.current || dataStatus !== 'success' || !groupedData.length) return;
+
+    // Create chart instance only once
+    if (!chartInstance.current) {
+      console.log('[Chart Init] Creating new chart instance');
+      chartInstance.current = new Chart(chartRef.current, chartConfig);
+    } else {
+      // Update existing chart in-place
+      console.log('[Chart Update] Updating chart in-place');
+
+      // Update data
+      chartInstance.current.data = chartConfig.data;
+
+      // Update options
+      chartInstance.current.options = chartConfig.options as any;
+
+      // Update without animation for instant feedback
+      chartInstance.current.update('none');
     }
+  }, [dataStatus, groupedData, chartConfig]);
 
-    chartInstance.current = new Chart(chartRef.current, config);
-
+  // Cleanup only on unmount
+  useEffect(() => {
     return () => {
       if (chartInstance.current) {
+        console.log('[Chart Cleanup] Destroying chart instance');
         chartInstance.current.destroy();
         chartInstance.current = null;
       }
     };
-  }, [groupedData, activeKpi, groupBy, dataStatus, token, stackedMode, selectedSegment, highlightedBars, chartSelections, handleChartClick, themeColors, themeMode]);
+  }, []);
 
   return (
     <Card 
@@ -550,10 +560,19 @@ const EnhancedChartPanel: React.FC = () => {
           {isChartFilterActive && (
             <Button
               size="small"
-              onClick={() => {
+              onClick={async () => {
                 clearChartSelections();
-                (roadLayer as any).definitionExpression = previousDefinitionExpression.current;
+                if (roadLayer) {
+                  (roadLayer as any).definitionExpression = previousDefinitionExpression.current;
+                }
                 setSelectedSegment(null);
+                // ADD: Zoom back to original extent
+                if (mapView) {
+                  await mapView.goTo(CONFIG.map, {
+                    duration: 1000,
+                    easing: 'ease-in-out'
+                  });
+                }
               }}
               type="text"
               danger
@@ -578,60 +597,90 @@ const EnhancedChartPanel: React.FC = () => {
         </Space>
       }
     >
-      {loading && (
-        <div style={{ textAlign: 'center', padding: '50px 0' }}>
-          <Spin size="large" />
-          <div style={{ marginTop: '12px', color: token.colorText }}>Loading chart data...</div>
-        </div>
-      )}
+      <div style={{ position: 'relative', minHeight: '700px' }}>
 
-      {dataStatus === 'error' && (
-        <Alert 
-          message="Chart Loading Error" 
-          description={`Failed to load ${KPI_LABELS[activeKpi]} data: ${errorDetails}`}
-          type="error" 
-          showIcon 
-          style={{ margin: '20px' }}
-        />
-      )}
+        {/* --- STATE OVERLAYS (Spinner/Alerts) --- */}
+        {/* This div will overlay on top of the chart canvas */}
+        {(loading || dataStatus === 'error' || dataStatus === 'no-data') && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10,
+            // Add a semi-transparent background to dim the chart
+            backgroundColor: themeMode === 'dark' ? 'rgba(31, 41, 55, 0.7)' : 'rgba(255, 255, 255, 0.7)',
+            backdropFilter: 'blur(2px)',
+            padding: '20px'
+          }}>
 
-      {dataStatus === 'no-data' && (
-        <Alert 
-          message="No Chart Data Available" 
-          description={errorDetails}
-          type="info" 
-          showIcon 
-          style={{ margin: '20px' }}
-          action={
-            <Button 
-              size="small" 
-              onClick={() => window.location.reload()}
-            >
-              Refresh
-            </Button>
-          }
-        />
-      )}
-      
-      {!loading && dataStatus === 'success' && groupedData.length > 0 && (
-        <>
-          <div style={{ position: 'relative', height: '700px' }}>
-            <canvas ref={chartRef} />
+            {loading && (
+              <div style={{ textAlign: 'center' }}>
+                <Spin size="large" />
+                <div style={{ marginTop: '12px', color: token.colorText }}>Loading chart data...</div>
+              </div>
+            )}
+
+            {dataStatus === 'error' && (
+              <Alert
+                message="Chart Loading Error"
+                description={`Failed to load ${KPI_LABELS[activeKpi]} data: ${errorDetails}`}
+                type="error"
+                showIcon
+              />
+            )}
+
+            {dataStatus === 'no-data' && (
+              <Alert
+                message="No Chart Data Available"
+                description={errorDetails}
+                type="info"
+                showIcon
+                action={
+                  <Button
+                    size="small"
+                    onClick={() => window.location.reload()}
+                  >
+                    Refresh
+                  </Button>
+                }
+              />
+            )}
           </div>
-          {stackedMode && (
-            <div style={{
-              marginTop: '8px',
-              fontSize: '12px',
-              color: token.colorTextSecondary,
-              textAlign: 'center'
-            }}>
-              Click to select • Ctrl+Click for multiple selections • Click again to deselect
-            </div>
-          )}
-        </>
-      )}
+        )}
+
+        {/* --- CHART CONTAINER --- */}
+        {/* This container is now ALWAYS rendered */}
+        <div style={{
+          position: 'relative',
+          height: '700px',
+          // Hide the container if data isn't ready, but don't unmount it
+          visibility: (dataStatus === 'success' && groupedData.length > 0) ? 'visible' : 'hidden'
+        }}>
+          <canvas ref={chartRef} />
+        </div>
+
+        {/* --- FOOTER TEXT --- */}
+        {/* Conditionally render this text */}
+        {stackedMode && !loading && dataStatus === 'success' && groupedData.length > 0 && (
+          <div style={{
+            marginTop: '8px',
+            fontSize: '12px',
+            color: token.colorTextSecondary,
+            textAlign: 'center'
+          }}>
+            Click to select • Ctrl+Click for multiple selections • Click again to deselect
+          </div>
+        )}
+      </div>
     </Card>
   );
-};
+});
+
+EnhancedChartPanel.displayName = 'EnhancedChartPanel';
 
 export default EnhancedChartPanel;

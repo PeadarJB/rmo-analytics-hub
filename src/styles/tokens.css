@@ -349,7 +349,7 @@
   --color-status-info-fg: var(--color-rmo-cyan-300);
   
   /* Condition Colors */
-  --color-condition-good-map: var(--color-green-400);
+  --color-condition-good-map: var(--color-green-500);
   --color-condition-poor-map: var(--color-red-600);
   --color-condition-fair-fg: var(--color-amber-50);
   

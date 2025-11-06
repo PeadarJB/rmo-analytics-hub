@@ -1,116 +1,24 @@
 // rmo-analytics-hub/src/config/appConfig.ts
 
 import { getConditionColors } from '@/utils/themeHelpers';
+import { KPIKey, KPI_LABELS } from './kpiConfig';
 
-export type KPIKey = 'iri' | 'rut' | 'psci' | 'csc' | 'mpd' | 'lpv3';
+// IMPORT from the single source of truth
+import {
+  ROAD_FIELDS,
+  SUBGROUP_OPTIONS,
+  getKPIFieldName,
+  LA_LAYER_CONFIG,
+  LAMetricType,
+  LA_FIELD_PATTERNS,
+  LA_COLOR_GRADIENTS,
+  LA_PERCENTAGE_RANGES,
+  SubgroupOption
+} from './layerConfig';
 
 // Road segment constants
-// Each road segment in the RMO network is fixed at 100 meters length
 export const SEGMENT_LENGTH_METERS = 100;
 export const SEGMENT_LENGTH_KM = 0.1; // 100m = 0.1km
-
-// KPI Labels - MOVED BEFORE SWIPE_LAYER_CONFIG
-export const KPI_LABELS: Record<KPIKey, string> = {
-  iri: 'IRI',
-  rut: 'Rut Depth',
-  psci: 'PSCI',
-  csc: 'CSC',
-  mpd: 'MPD',
-  lpv3: 'LPV'
-};
-
-// LA Layer configuration - MOVED BEFORE SWIPE_LAYER_CONFIG
-export const LA_LAYER_CONFIG = {
-  // Primary pattern for finding LA layers
-  layerTitlePattern: (kpi: string, year: number) => {
-    // Map KPI keys to the exact names used in the layers
-    const kpiNameMap: Record<string, string> = {
-      'iri': 'IRI',
-      'rut': 'RUT',
-      'psci': 'PSCI',
-      'csc': 'CSC',
-      'mpd': 'MPD',
-      'lpv3': 'LPV'  // Note: lpv3 maps to LPV
-    };
-    
-    const displayKpi = kpiNameMap[kpi.toLowerCase()] || kpi.toUpperCase();
-    return `Average ${displayKpi} ${year}`;
-  },
-  // Alternative patterns to try if primary fails
-  alternativePatterns: [
-    (kpi: string, year: number) => `${year} Average ${kpi.toUpperCase()}`,
-    (kpi: string, year: number) => `Average ${kpi.toUpperCase()} ${year}`,
-  ]
-};
-
-// Consolidated KPI thresholds from RendererService and StatisticsService
-// Based on the 2018 Regional Report condition class definitions
-export const KPI_THRESHOLDS: Record<KPIKey, {
-  veryGood?: number;
-  good: number;
-  fair: number;
-  poor?: number;
-  veryPoor?: number;
-}> = {
-  // International Roughness Index (mm/m) - lower values are better
-  iri: {
-    veryGood: 3,
-    good: 4,
-    fair: 5,
-    poor: 7
-  },
-  // Rut Depth (mm) - lower values are better
-  rut: {
-    veryGood: 6,
-    good: 9,
-    fair: 15,
-    poor: 20
-  },
-  // Characteristic SCRIM Coefficient - higher values are better (inverted)
-  csc: {
-    veryPoor: 0.35,
-    poor: 0.40,
-    fair: 0.45,
-    good: 0.50
-  },
-  // Longitudinal Profile Variance (3m) - lower values are better
-  lpv3: {
-    veryGood: 2,
-    good: 4,
-    fair: 7,
-    poor: 10
-  },
-  // Pavement Surface Condition Index (1-10 scale) - higher is better
-  psci: {
-    veryPoor: 2,
-    poor: 4,
-    fair: 6,
-    good: 8
-  },
-  // Mean Profile Depth (mm) - specific thresholds for skid resistance
-  mpd: {
-    poor: 0.6,
-    good: 0.7,
-    fair: 0.65
-  }
-};
-
-// Map of subgroup codes to their boolean field names in the dataset
-export const SUBGROUP_FIELD_MAP = {
-  'Roads_Joined_IsFormerNa': 10,
-  'Roads_Joined_IsDublin': 20,
-  'Roads_Joined_IsCityTown': 30,
-  'Roads_Joined_IsPeat': 40,
-  'Rural': 50
-};
-
-export const SUBGROUP_CODE_TO_FIELD: Record<number, string> = {
-  10: 'Roads_Joined_IsFormerNa',
-  20: 'Roads_Joined_IsDublin',
-  30: 'Roads_Joined_IsCityTown',
-  40: 'Roads_Joined_IsPeat',
-  50: 'Rural'
-};
 
 // Renderer configuration
 export const RENDERER_CONFIG = {
@@ -119,12 +27,94 @@ export const RENDERER_CONFIG = {
    * Gets theme-aware condition colors for map renderers.
    * This function now delegates to `getConditionColors` from `themeHelpers`,
    * which reads the values directly from CSS custom properties.
-   * This ensures the map symbology stays in sync with the application theme.
-   * @returns A record of condition names to RGBA color arrays.
    */
   getThemeAwareColors: () => getConditionColors(),
   lineWidth: 4
 };
+
+// ============================================================================
+// 🆕 PHASE 1: DIRECT FEATURE LAYER URLs
+// ============================================================================
+/**
+ * Direct Feature Layer URLs for improved performance and reliability.
+ *
+ * These URLs allow the application to connect directly to hosted feature layers,
+ * bypassing WebMap initialization. This provides:
+ * - Faster data loading (no WebMap overhead)
+ * - More reliable queries (no layer title matching)
+ * - Independent operation of map and report components
+ *
+ * @see Documentation: docs/LAYER_ARCHITECTURE.md
+ *
+ * 🔧 HOW TO OBTAIN THESE URLs:
+ * 1. Log into ArcGIS Online: https://www.arcgis.com/
+ * 2. Navigate to Content > My Content (or your organization's content)
+ * 3. Find each layer and click on it
+ * 4. Click "View" to open the item details page
+ * 5. On the right side, find the "URL" field
+ * 6. Copy the complete URL including the layer index (e.g., /FeatureServer/0)
+ *
+ * ⚠️ IMPORTANT NOTES:
+ * - URLs must include the full path including /FeatureServer/[layer_index]
+ * - The layer index (0, 1, 2, etc.) identifies which layer in the service
+ * - Titles should match the existing layer titles in the WebMap for compatibility
+ * - These URLs should point to the SAME layers as those in the WebMap
+ */
+export const FEATURE_LAYER_URLS = {
+  /**
+   * Road Network Layer
+   * Primary data source containing road segments with condition metrics
+   *
+   * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
+   * Example format: 'https://services.arcgis.com/{org-id}/arcgis/rest/services/{service-name}/FeatureServer/0'
+   */
+  roadNetwork: {
+    url: 'PLACEHOLDER_ROAD_NETWORK_URL', // 🔴 REPLACE WITH ACTUAL URL
+    title: 'RoadNetwork Temporal 2011 2025', // Match WebMap layer title
+    description: 'Line features representing regional road network segments (100m each)',
+  },
+
+  /**
+   * Road Network Swipe Layer
+   * Duplicate layer used for temporal comparison in swipe widget
+   * This may be the same URL as roadNetwork if using a single layer
+   *
+   * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
+   */
+  roadNetworkSwipe: {
+    url: 'PLACEHOLDER_ROAD_NETWORK_SWIPE_URL', // 🔴 REPLACE WITH ACTUAL URL
+    title: 'RoadNetwork Temporal 2011 2025', // Match WebMap layer title
+    description: 'Duplicate road network layer for swipe comparison',
+  },
+
+  /**
+   * Local Authority Polygon Layer
+   * Contains pre-aggregated statistics at LA (county) level
+   *
+   * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
+   */
+  laPolygon: {
+    url: 'PLACEHOLDER_LA_POLYGON_URL', // 🔴 REPLACE WITH ACTUAL URL
+    title: 'RMO LA data', // Match WebMap layer title
+    description: 'Polygon features for Local Authority boundaries with aggregated metrics',
+  },
+} as const;
+
+/**
+ * Layer Loading Strategy Configuration
+ *
+ * Controls how layers are loaded in the application:
+ * - 'direct': Load layers directly from FEATURE_LAYER_URLS (fastest, used by reports)
+ * - 'webmap': Load layers from WebMap configuration (used by overview map)
+ */
+export const LAYER_LOADING_CONFIG = {
+  // No default strategy - each page specifies its own
+  enablePerformanceLogging: true,
+} as const;
+
+// ============================================================================
+// END PHASE 1 ADDITIONS
+// ============================================================================
 
 
 /**
@@ -139,8 +129,6 @@ interface SwipeLayerOption {
 
 /**
  * Configuration for the Swipe Panel.
- * This defines the default layers available for comparison between different years.
- * The structure is adapted from the TII project for consistency.
  */
 export const SWIPE_LAYER_CONFIG: {
   leftPanel: { label: string; layers: ReadonlyArray<SwipeLayerOption> };
@@ -175,111 +163,50 @@ export const SWIPE_LAYER_CONFIG: {
 };
 
 export const CONFIG = {
-  title: 'RMO Pavement Analytics',
-  webMapId: '9aff0a681f67430cad396dc9cac99e05',
-  roadNetworkLayerTitle: 'RMO NM 2025',
-  roadNetworkLayerSwipeTitle: 'RMO NM 2025',
-  fields: {
-    iri: 'roads_csv_iri',
-    rut: 'roads_csv_rut',
-    psci: 'roads_csv_psci',
-    csc: 'roads_csv_csc',
-    mpd: 'roads_csv_mpd',
-    lpv3: 'roads_csv_lpv',
-    route: 'Roads_Joined_Route',
-    year: 'SurveyYear',
-    la: 'Roads_Joined_LA',
-    subgroupPlaceholder: 'RoadGroupCode',
-  },
+  title: 'PMS Regional Road Survey 2025',
+  webMapId: '3caed4039c514e20b4e50039b92cd27b',
+  roadNetworkLayerTitle: 'RoadNetwork Temporal 2011 2025',
+  roadNetworkLayerSwipeTitle: 'RoadNetwork Temporal 2011 2025',
+  laPolygonLayerTitle: 'RMO LA data',
+  
+  // USE IMPORTS
+  fields: ROAD_FIELDS, // Use imported object
+  
   filters: {
-    localAuthority: { id: 'localAuthority', label: 'Local Authority', field: 'Roads_Joined_LA', type: 'multi-select' as const },
+    localAuthority: { 
+      id: 'localAuthority', 
+      label: 'Local Authority', 
+      field: ROAD_FIELDS.la, // Use field from imported object
+      type: 'multi-select' as const 
+    },
     subgroup: {
       id: 'subgroup',
       label: 'Road Subgroup',
       field: 'subgroup',
       type: 'multi-select' as const,
-      options: [
-        { label: 'Former National', value: 'Roads_Joined_IsFormerNa', code: 10 },
-        { label: 'Dublin', value: 'Roads_Joined_IsDublin', code: 20 },
-        { label: 'City/Town', value: 'Roads_Joined_IsCityTown', code: 30 },
-        { label: 'Peat', value: 'Roads_Joined_IsPeat', code: 40 },
-        { label: 'Rural', value: 'Rural', code: 50 }
-      ]
+      options: SUBGROUP_OPTIONS // Use imported array
     },
-    route: { id: 'route', label: 'Route', field: 'Roads_Joined_Route', type: 'multi-select' as const },
-    year: {
-      id: 'year', label: 'Survey Year', field: 'SurveyYear', type: 'multi-select' as const,
-      options: [{ label: '2011', value: 2011 }, { label: '2018', value: 2018 }, { label: '2025', value: 2025 }]
+    route: { 
+      id: 'route', 
+      label: 'Route', 
+      field: ROAD_FIELDS.route, // Use field from imported object
+      type: 'multi-select' as const 
     }
   },
   defaultKPI: 'iri' as KPIKey,
-  defaultYears: [2025],
-  defaultGroupBy: 'Roads_Joined_LA',
+  defaultYear: 2025,
+  defaultGroupBy: ROAD_FIELDS.la, // Use field from imported object
   map: { center: [-8.0, 53.3] as [number, number], zoom: 7 }
 } as const;
 
-// Helper function to get KPI field name for a specific year
-export function getKPIFieldName(kpi: KPIKey, year: number): string {
-  const baseField = CONFIG.fields[kpi];
-  return `${baseField}_${year}`;
-}
+// Re-export key types and functions that were previously here
+export {
+  getKPIFieldName,
+  LA_LAYER_CONFIG,
+  LA_FIELD_PATTERNS,
+  LA_COLOR_GRADIENTS,
+  LA_PERCENTAGE_RANGES,
+};
 
-// Helper function to determine condition class based on KPI value and thresholds
-export function getConditionClass(
-  kpi: KPIKey,
-  value: number,
-  use5Classes: boolean = RENDERER_CONFIG.use5ClassRenderers
-): 'veryGood' | 'good' | 'fair' | 'poor' | 'veryPoor' | null {
-  if (value === null || value === undefined || isNaN(value)) return null;
-  const thresholds = KPI_THRESHOLDS[kpi];
-
-  if (kpi === 'iri' || kpi === 'rut' || kpi === 'lpv3') {
-    if (use5Classes && thresholds.veryGood !== undefined && value < thresholds.veryGood) return 'veryGood';
-    if (value < thresholds.good) return 'good';
-    if (value < thresholds.fair) return 'fair';
-    if (use5Classes && thresholds.poor !== undefined) {
-      if (value < thresholds.poor) return 'poor';
-      return 'veryPoor';
-    }
-    return 'poor';
-  } else if (kpi === 'csc') {
-    if (use5Classes && thresholds.good !== undefined && value > thresholds.good) return 'veryGood';
-    if (value >= thresholds.fair) return 'good';
-    if (value >= thresholds.poor! && thresholds.poor !== undefined) return 'fair';
-    if (use5Classes && thresholds.veryPoor !== undefined) {
-      if (value >= thresholds.veryPoor) return 'poor';
-      return 'veryPoor';
-    }
-    return 'poor';
-  } else if (kpi === 'psci') {
-    if (use5Classes) {
-      if (value > 8) return 'veryGood';
-      if (value > thresholds.good) return 'good';
-      if (value > thresholds.fair) return 'fair';
-      if (value > thresholds.poor!) return 'poor';
-      return 'veryPoor';
-    }
-    if (value > thresholds.fair) return 'good';
-    if (value > thresholds.poor!) return 'fair';
-    return 'poor';
-  } else if (kpi === 'mpd') {
-    if (value >= thresholds.good) return 'good';
-    if (value >= thresholds.fair) return 'fair';
-    return 'poor';
-  }
-  return null;
-}
-
-export function getSimplifiedConditionClass(
-  kpi: KPIKey,
-  value: number
-): 'good' | 'fair' | 'poor' | null {
-  const detailed = getConditionClass(kpi, value, true);
-  if (!detailed) return null;
-  if (detailed === 'veryGood' || detailed === 'good') return 'good';
-  if (detailed === 'fair') return 'fair';
-  return 'poor';
-}
-
-export type SubgroupOption = typeof CONFIG.filters.subgroup.options[number];
-export type YearOption = typeof CONFIG.filters.year.options[number];
+// Separate type exports are required when 'isolatedModules' is enabled
+export type { LAMetricType, SubgroupOption };

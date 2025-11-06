@@ -1,7 +1,9 @@
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import Query from '@arcgis/core/rest/support/Query';
 import type MapView from '@arcgis/core/views/MapView';
-import { CONFIG, SUBGROUP_CODE_TO_FIELD } from '@/config/appConfig'; // ADD SUBGROUP_CODE
+import { CONFIG } from '@/config/appConfig';
+import { ROAD_FIELDS, SUBGROUP_CODE_TO_FIELD } from '@/config/layerConfig';
+import type { FilterState } from '@/types';
 
 /**
  * An in-memory cache for storing unique field values to avoid redundant queries.
@@ -12,49 +14,201 @@ const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
 export default class QueryService {
   /**
-   * Fetches unique, distinct values for a given field from a FeatureLayer.
-   * Implements a simple caching mechanism to improve performance.
-   * @param layer - The FeatureLayer to query.
-   * @param field - The field name to get unique values for.
-   * @returns A promise that resolves to a sorted array of unique string values.
+   * Builds a definition expression (SQL WHERE clause) from active filters.
+   * NOTE: Year is NOT included - it determines which field to query (e.g., AIRI_2025).
+   * @param filters - Active filter state (without year).
+   * @returns SQL WHERE clause string
    */
-  static async getUniqueValues(layer: FeatureLayer | null, field: string): Promise<string[]> {
+  static buildDefinitionExpression(filters: {
+    localAuthority: string[];
+    subgroup: number[];
+    route: string[];
+  }): string {
+    const whereClauses: string[] = [];
+
+    // Local Authority filter
+    if (filters.localAuthority && filters.localAuthority.length > 0) {
+      const laValues = filters.localAuthority.map(la => `'${la}'`).join(', ');
+      whereClauses.push(`${ROAD_FIELDS.la} IN (${laValues})`);
+    }
+
+    // Route filter
+    if (filters.route && filters.route.length > 0) {
+      const routeValues = filters.route.map(r => `'${r}'`).join(', ');
+      whereClauses.push(`${ROAD_FIELDS.route} IN (${routeValues})`);
+    }
+
+    // Subgroup filter
+    if (filters.subgroup && filters.subgroup.length > 0) {
+      const subgroupClauses = filters.subgroup.map(code => {
+        const fieldName = SUBGROUP_CODE_TO_FIELD[code];
+        if (!fieldName) {
+          console.warn(`Unknown subgroup code: ${code}`);
+          return null;
+        }
+        
+        // Rural is the default (absence of other flags)
+        if (fieldName === 'Rural') {
+          return `(IsFormerNa = 0 AND IsDublin = 0 AND IsCityTown = 0 AND IsPeat = 0)`;
+        }
+        
+        // Other subgroups check for flag = 1
+        return `${fieldName} = 1`;
+      }).filter(clause => clause !== null);
+
+      if (subgroupClauses.length > 0) {
+        whereClauses.push(`(${subgroupClauses.join(' OR ')})`);
+      }
+    }
+
+    // Combine all clauses
+    return whereClauses.length > 0 ? whereClauses.join(' AND ') : '1=1';
+  }
+
+  /**
+   * Simple wrapper for getting unique values with caching
+   * @param layer - Feature layer to query
+   * @param fieldName - Field to get unique values from
+   * @returns Promise with array of unique values
+   */
+  static async getUniqueValues(
+    layer: __esri.FeatureLayer | null,
+    fieldName: string
+  ): Promise<string[]> {
     if (!layer) {
-      // Placeholder values for local run without data
-      if (field.toLowerCase().includes('la')) return ['Dublin City', 'Galway County', 'Limerick City and County'];
-      if (field.toLowerCase().includes('route')) return ['R123', 'R456', 'R750'];
-      if (field.toLowerCase().includes('year')) return ['2011', '2018', '2025'];
+      console.warn(`Cannot get unique values: layer is null`);
+      return [];
+    }
+  
+    // Check cache first
+    const cacheKey = `${layer.id}_${fieldName}`;
+    const cached = uniqueValuesCache.get(cacheKey);
+    
+    if (cached && (Date.now() - cached.timestamp) < CACHE_EXPIRY_MS) {
+      console.log(`Using cached values for ${fieldName}`);
+      return cached.data;
+    }
+  
+    try {
+      // Use queryUniqueValues with empty filters to get all values
+      const values = await this.queryUniqueValues(layer, fieldName, {
+        localAuthority: [],
+        subgroup: [],
+        route: []
+      });
+  
+      // Cache the result
+      uniqueValuesCache.set(cacheKey, {
+        data: values,
+        timestamp: Date.now()
+      });
+  
+      return values;
+    } catch (error) {
+      console.error(`Error getting unique values for ${fieldName}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Queries unique values for a specific field
+   * @param layer - Feature layer to query
+   * @param fieldName - Field to get unique values from
+   * @param currentFilters - Current filter state (without year)
+   * @returns Promise with array of unique values
+   */
+  static async queryUniqueValues(
+    layer: __esri.FeatureLayer,
+    fieldName: string,
+    currentFilters: {
+      localAuthority: string[];
+      subgroup: number[];
+      route: string[];
+    }
+  ): Promise<string[]> {
+    try {
+      // Build WHERE clause excluding the field being queried
+      const tempFilters = { ...currentFilters };
+      
+      // Clear the filter for the field being queried
+      if (fieldName === ROAD_FIELDS.la) {
+        tempFilters.localAuthority = [];
+      } else if (fieldName === ROAD_FIELDS.route) {
+        tempFilters.route = [];
+      }
+
+      const where = this.buildDefinitionExpression(tempFilters);
+
+      const query = layer.createQuery();
+      query.where = where;
+      query.outFields = [fieldName];
+      query.returnDistinctValues = true;
+      query.returnGeometry = false;
+      query.orderByFields = [fieldName];
+
+      const result = await layer.queryFeatures(query);
+      
+      const uniqueValues = result.features
+        .map(feature => feature.attributes[fieldName])
+        .filter(value => value != null && value !== '');
+
+      console.log(`Found ${uniqueValues.length} unique values for ${fieldName}`);
+      return uniqueValues;
+
+    } catch (error) {
+      console.error(`Error querying unique values for ${fieldName}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Queries routes filtered by selected Local Authorities.
+   * If no LAs are selected, returns all routes.
+   * If LAs are selected, returns only routes within those LAs.
+   * @param layer - Feature layer to query
+   * @param selectedLAs - Array of selected Local Authority names
+   * @returns Promise with array of route names, sorted alphabetically
+   */
+  static async queryRoutesForLAs(
+    layer: __esri.FeatureLayer | null,
+    selectedLAs: string[]
+  ): Promise<string[]> {
+    if (!layer) {
+      console.warn('Cannot query routes: layer is null');
       return [];
     }
 
-    // Check if the value is in the cache and is not expired
-    const cached = uniqueValuesCache.get(field);
-    if (cached && (Date.now() - cached.timestamp < CACHE_EXPIRY_MS)) {
-      console.log(`Using cached unique values for field: ${field}`);
-      return cached.data;
-    }
-
     try {
-      const q = layer.createQuery();
-      q.where = '1=1';
-      q.outFields = [field];
-      q.returnDistinctValues = true;
-      q.returnGeometry = false;
+      // Build WHERE clause
+      let whereClause = '1=1';
+      if (selectedLAs && selectedLAs.length > 0) {
+        const laValues = selectedLAs.map(la => `'${la.replace("'", "''")}'`).join(', ');
+        whereClause = `${ROAD_FIELDS.la} IN (${laValues})`;
+      }
 
-      const res = await layer.queryFeatures(q);
-      const vals = new Set<string>();
-      res.features.forEach(f => {
-        const v = f.attributes[field];
-        if (v !== null && v !== undefined) vals.add(String(v));
-      });
-      const sortedVals = Array.from(vals).sort();
+      console.log(`[QueryService] Querying routes for LAs:`, selectedLAs.length > 0 ? selectedLAs : 'ALL');
 
-      // Store the result in the cache with the current timestamp
-      uniqueValuesCache.set(field, { data: sortedVals, timestamp: Date.now() });
+      const query = layer.createQuery();
+      query.where = whereClause;
+      query.outFields = [ROAD_FIELDS.route];
+      query.returnDistinctValues = true;
+      query.returnGeometry = false;
+      query.orderByFields = [ROAD_FIELDS.route];
 
-      return sortedVals;
+      const result = await layer.queryFeatures(query);
+
+      const routes = result.features
+        .map(feature => feature.attributes[ROAD_FIELDS.route])
+        .filter(value => value != null && value !== '');
+
+      // Sort alphabetically (case-insensitive)
+      routes.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+      console.log(`[QueryService] Found ${routes.length} routes`);
+      return routes;
+
     } catch (error) {
-      console.error('Error fetching unique values:', error);
+      console.error('Error querying routes for LAs:', error);
       return [];
     }
   }
@@ -288,20 +442,71 @@ export default class QueryService {
   }
 
   /**
-   * Zooms the map to the extent of the currently filtered features.
-   * @param view - The MapView instance.
-   * @param layer - The FeatureLayer to query.
-   * @param where - The WHERE clause (definitionExpression).
+   * Queries the extent (bounding box) for the current filter selection
+   * Used for zooming to filtered features
+   * @param layer - Feature layer to query
+   * @param filters - Current filter state (without year)
+   * @returns Promise with extent
    */
-  static async zoomToDefinition(view: MapView | null, layer: FeatureLayer | null, where: string) {
-    if (!view || !layer) return;
-    const q = layer.createQuery();
-    q.where = where;
-    q.returnGeometry = true;
-    q.outFields = ['OBJECTID'];
+  static async queryExtentForFilters(
+    layer: __esri.FeatureLayer,
+    filters: {
+      localAuthority: string[];
+      subgroup: number[];
+      route: string[];
+    }
+  ): Promise<__esri.Extent | null> {
     try {
-      const res = await layer.queryExtent(q);
-      if (res.extent) await view.goTo(res.extent.expand(1.1));
+      const where = this.buildDefinitionExpression(filters);
+      
+      const query = layer.createQuery();
+      query.where = where;
+      query.returnGeometry = true;
+
+      const result = await layer.queryExtent(query);
+      
+      if (result.extent) {
+        console.log('Queried extent for filters:', result.extent);
+        return result.extent;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error querying extent:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Zooms the map view to the extent of features matching a given definition expression.
+   * @param mapView - The MapView instance.
+   * @param layer - The FeatureLayer to query.
+   * @param whereClause - The definition expression to filter features.
+   */
+  static async zoomToDefinition(
+    mapView: __esri.MapView | null,
+    layer: __esri.FeatureLayer | null,
+    whereClause: string
+  ): Promise<void> {
+    if (!mapView || !layer) {
+      console.warn('Cannot zoom to definition: MapView or layer is null.');
+      return;
+    }
+
+    try {
+      const query = layer.createQuery();
+      query.where = whereClause;
+      query.returnGeometry = true;
+      query.outFields = []; // No need for fields, just geometry
+
+      const result = await layer.queryExtent(query);
+
+      if (result.extent) {
+        await mapView.goTo(result.extent, { duration: 1000, easing: 'ease-in-out' });
+        console.log('Zoomed to filtered extent.');
+      } else {
+        console.log('No features found for the given definition expression, cannot zoom.');
+      }
     } catch (error) {
       console.error('Error zooming to definition:', error);
     }

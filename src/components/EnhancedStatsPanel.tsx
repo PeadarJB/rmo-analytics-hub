@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Statistic, Row, Col, Divider, Tag, Space, Segmented, Spin, Alert, theme } from 'antd';
 import useAppStore from '@/store/useAppStore';
-import { CONFIG, KPI_LABELS } from '@/config/appConfig';
+import { KPI_LABELS } from '@/config/kpiConfig';
 
 const EnhancedStatsPanel: React.FC = () => {
   const { 
@@ -21,13 +21,14 @@ const EnhancedStatsPanel: React.FC = () => {
   const [isCalculating, setIsCalculating] = useState(false);
   const { token } = theme.useToken();
   
-  const yearOptions = CONFIG.filters.year.options.map(o => ({
-    label: o.label,
-    value: o.value
-  }));
+  const yearOptions = [
+    { label: '2011', value: 2011 },
+    { label: '2018', value: 2018 },
+    { label: '2025', value: 2025 }
+  ];
 
   const onYearChange = async (newYear: number) => {
-    setFilters({ year: [newYear] });
+    setFilters({ year: newYear });
     // Trigger map re-rendering and statistics recalculation
     updateRenderer();
     await calculateStatistics();
@@ -39,8 +40,8 @@ const EnhancedStatsPanel: React.FC = () => {
     return () => clearTimeout(timer);
   }, [currentFilters, activeKpi]);
 
-  // The first year in the array is the one we display stats for
-  const selectedYear = currentFilters.year.length > 0 ? currentFilters.year[0] : null;
+  // Get the current selected year
+  const selectedYear = currentFilters.year || null;
 
   // Determine which stats to display
   const displayStats = isChartFilterActive ? chartFilteredStats : currentStats;
@@ -106,11 +107,11 @@ const EnhancedStatsPanel: React.FC = () => {
     );
   }
 
-  const kpiStats = displayStats.metrics.find(m => m.metric === activeKpi.toUpperCase());
+  // FIXED: No longer need kpiStats, displayStats is the correct object
   const kpiTitle = `${KPI_LABELS[activeKpi]}`;
 
   return (
-    <Card 
+    <Card
       size="small" 
       title={
         <Space>
@@ -141,7 +142,8 @@ const EnhancedStatsPanel: React.FC = () => {
 
       <Divider style={{ margin: '12px 0' }} />
       
-      {kpiStats && (
+      {/* FIXED: Check displayStats directly */}
+      {displayStats && (
         <div style={{ marginBottom: 12 }}>
           <Row gutter={[8, 8]}>
             <Col span={24}>
@@ -150,10 +152,10 @@ const EnhancedStatsPanel: React.FC = () => {
               </Tag>
             </Col>
 
-            {/* Core stats */}
-            <Col span={8}><Statistic title="Average" value={kpiStats.average} precision={2} /></Col>
-            <Col span={8}><Statistic title="Min" value={kpiStats.min} precision={2} /></Col>
-            <Col span={8}><Statistic title="Max" value={kpiStats.max} precision={2} /></Col>
+            {/* Core stats - FIXED: Use avgValue, minValue, maxValue */}
+            <Col span={8}><Statistic title="Average" value={displayStats.avgValue} precision={2} /></Col>
+            <Col span={8}><Statistic title="Min" value={displayStats.minValue} precision={2} /></Col>
+            <Col span={8}><Statistic title="Max" value={displayStats.maxValue} precision={2} /></Col>
 
             <Divider style={{ margin: '12px 0' }} />
 
@@ -167,7 +169,7 @@ const EnhancedStatsPanel: React.FC = () => {
             <Col span={8}>
               <Statistic
                 title={<span style={{ fontSize: 14, fontWeight: 600, }}>Very Good</span>}
-                value={kpiStats.veryGoodPct}
+                value={displayStats.veryGoodPct}
                 precision={1}
                 suffix="%"
                 valueStyle={{ fontWeight: 600, color: token.colorSuccess }}
@@ -176,7 +178,7 @@ const EnhancedStatsPanel: React.FC = () => {
             <Col span={8}>
               <Statistic
                 title={<span style={{ fontSize: 14, fontWeight: 600 }}>Good</span>}
-                value={kpiStats.goodPct}
+                value={displayStats.goodPct}
                 precision={1}
                 suffix="%"
                 valueStyle={{ fontWeight: 600, color: token.green4 }}
@@ -185,7 +187,7 @@ const EnhancedStatsPanel: React.FC = () => {
             <Col span={8}>
               <Statistic
                 title={<span style={{ fontSize: 14, fontWeight: 600 }}>Fair</span>}
-                value={kpiStats.fairPct}
+                value={displayStats.fairPct}
                 precision={1}
                 suffix="%"
                 valueStyle={{ fontWeight: 600, color: token.colorWarning }}
@@ -194,7 +196,7 @@ const EnhancedStatsPanel: React.FC = () => {
             <Col span={8}>
               <Statistic
                 title={<span style={{ fontSize: 14, fontWeight: 600 }}>Poor</span>}
-                value={kpiStats.poorPct}
+                value={displayStats.poorPct}
                 precision={1}
                 suffix="%"
                 valueStyle={{ fontWeight: 600, color: token.orange5 }}
@@ -203,7 +205,7 @@ const EnhancedStatsPanel: React.FC = () => {
             <Col span={8}>
               <Statistic
                 title={<span style={{ fontSize: 14, fontWeight: 600 }}>Very Poor</span>}
-                value={kpiStats.veryPoorPct}
+                value={displayStats.veryPoorPct}
                 precision={1}
                 suffix="%"
                 valueStyle={{ fontWeight: 600, color: token.colorError }}
@@ -230,6 +232,7 @@ const EnhancedStatsPanel: React.FC = () => {
       )}
 
       <div style={{ fontSize: 12, opacity: 0.7, color: token.colorTextSecondary }}>
+        {/* FIXED: Use lastUpdated from displayStats */}
         {isChartFilterActive ? 'Chart selection data' : `Updated for ${selectedYear} data`}: {new Date(displayStats.lastUpdated).toLocaleString()}
       </div>
     </Card>

@@ -79,6 +79,31 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
         // Store references
         viewRef.current = view;
         cleanupRef.current = cleanup;
+
+        // Apply simple outline renderer (no condition colors)
+        const roadLayer = webmap.layers.find(
+          l => l.title === CONFIG.roadNetworkLayerTitle
+        ) as __esri.FeatureLayer;
+
+        if (roadLayer) {
+          console.log('[NetworkMapSection] Applying simple outline renderer...');
+
+          // Create simple outline renderer
+          const simpleRenderer = {
+            type: 'simple',
+            symbol: {
+              type: 'simple-line',
+              color: [255, 170, 0, 0.8], // Orange color matching report
+              width: 1.5,
+              style: 'solid'
+            }
+          };
+
+          roadLayer.renderer = simpleRenderer as any;
+          await roadLayer.when();
+          console.log('[NetworkMapSection] Simple renderer applied');
+        }
+
         ReportMapService.storeViewReference(mapContainerId, view, cleanup);
 
         console.log('[NetworkMapSection] Map initialized successfully');

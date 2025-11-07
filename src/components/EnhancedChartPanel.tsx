@@ -274,17 +274,20 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
 
   const applyChartSelectionsToMap = useCallback(async () => {
     if (!roadLayer || !mapView) return;
-    
+
     const state = useAppStore.getState();
     const selections = state.chartSelections;
-    
+
     if (selections.length === 0) {
+      // Restore previous definition expression
       (roadLayer as any).definitionExpression = previousDefinitionExpression.current;
+      await roadLayer.when(); // Wait for layer to update
+      await roadLayer.refresh(); // Force visual refresh
       setSelectedSegment(null);
       message.info('Chart filter cleared');
       return;
     }
-    
+
     const whereClauses = selections.map(selection => {
       const year = selection.year;
 
@@ -300,30 +303,27 @@ const EnhancedChartPanel: React.FC = React.memo(() => {
       return `(${groupClause} AND ${conditionClause})`;
     });
 
-    let combinedWhere = whereClauses.join(' OR ');
+    const combinedWhere = `(${whereClauses.join(' OR ')})`;
 
-    if (previousDefinitionExpression.current !== '1=1') {
-      combinedWhere = `(${previousDefinitionExpression.current}) AND (${combinedWhere})`;
+    // Store current definition before overriding
+    if (selections.length === 1 && state.chartSelections.length === 1) {
+      previousDefinitionExpression.current = (roadLayer as any).definitionExpression || '1=1';
     }
 
-    console.log('[Chart Filter] Applying WHERE clause:', combinedWhere);
+    // Apply new definition
     (roadLayer as any).definitionExpression = combinedWhere;
-    
-    try {
-      const query = new Query({ where: combinedWhere, returnGeometry: false });
-      const result = await roadLayer.queryExtent(query);
-      
-      if (result.extent) {
-        await mapView.goTo(result.extent.expand(1.2), { duration: 1000 });
-        
-        const countResult = await roadLayer.queryFeatureCount(new Query({ where: combinedWhere }));
-        message.success(`Showing ${countResult} segments from ${selections.length} chart selection${selections.length > 1 ? 's' : ''}`);
-      }
-    } catch (error) {
-      console.error('Error applying chart filter:', error);
-      message.error('Failed to filter map features');
-    }
-  }, [roadLayer, mapView, groupBy, previousDefinitionExpression]);
+    await roadLayer.when(); // Wait for layer to update
+    await roadLayer.refresh(); // Force visual refresh
+
+    // Zoom to filtered extent
+    await QueryService.zoomToDefinition(mapView, roadLayer, combinedWhere);
+
+    // Update UI
+    const firstSelection = selections[0];
+    setSelectedSegment({ group: firstSelection.group, condition: firstSelection.condition });
+
+    message.success(`Map filtered to ${selections.length} selection${selections.length > 1 ? 's' : ''}`);
+  }, [roadLayer, mapView, groupBy, chartSelections]);
 
   useEffect(() => {
     if (roadLayer) {

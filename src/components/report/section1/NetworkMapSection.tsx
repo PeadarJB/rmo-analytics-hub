@@ -3,7 +3,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Card, Alert, Spin, theme } from 'antd';
 import MapView from '@arcgis/core/views/MapView';
 import WebMap from '@arcgis/core/WebMap';
-import ReportMapService from '@/services/ReportMapService';
+import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
+import Legend from '@arcgis/core/widgets/Legend';
+import ScaleBar from '@arcgis/core/widgets/ScaleBar';
+import useAppStore from '@/store/useAppStore';
 import { CONFIG } from '@/config/appConfig';
 
 interface NetworkMapSectionProps {
@@ -14,13 +17,13 @@ interface NetworkMapSectionProps {
 /**
  * Network Map Section for Section 1 of the Regional Report
  *
- * IMPORTANT: This component creates its OWN independent WebMap instance.
- * It does NOT use the shared webmap from useAppStore to prevent conflicts
- * and "map already destroyed" errors when navigating between pages.
+ * ARCHITECTURE CHANGE (Nov 7, 2025):
+ * This component now uses the directly-loaded layers from the store (via initializeLayersDirectly)
+ * instead of creating its own WebMap instance. This ensures consistency with the Report page's
+ * direct loading strategy and prevents conflicts.
  *
- * Architecture:
  * - Overview Dashboard: Uses store's webmap (dynamic symbology)
- * - Section 1 Report: Uses independent webmap (static symbology) ← THIS COMPONENT
+ * - Report Pages: Use directly-loaded layers (static symbology) ← THIS COMPONENT
  */
 const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
   year = 2025,
@@ -29,12 +32,20 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
   const { token } = theme.useToken();
   const mapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MapView | null>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mapContainerId = 'report-network-map-section1';
+  
+  // Get the directly-loaded layers from store
+  const { roadLayer, laLayer } = useAppStore();
 
   useEffect(() => {
+    // Guard: Wait for layers to be loaded
+    if (!roadLayer) {
+      console.log('[NetworkMapSection] Waiting for layers to load...');
+      return;
+    }
+
     // Guard: Prevent multiple initializations
     if (!mapRef.current) {
       console.log('[NetworkMapSection] Map container ref not ready');
@@ -53,94 +64,87 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
         setLoading(true);
         setError(null);
 
-        console.log('[NetworkMapSection] Starting map initialization...');
-        console.log('[NetworkMapSection] Using WebMap ID:', CONFIG.webMapId);
+        console.log('[NetworkMapSection] Starting map initialization with directly-loaded layers...');
         console.log('[NetworkMapSection] Container ID:', mapContainerId);
 
-        // ENHANCED: Verify container exists in DOM
+        // Verify container exists in DOM
         const container = document.getElementById(mapContainerId);
         if (!container) {
           throw new Error(`Container element '${mapContainerId}' not found in DOM`);
         }
 
-        // Clean up any existing map in this container
-        ReportMapService.cleanupExistingView(mapContainerId);
+        // Create a simple WebMap to hold our layers
+        const webmap = new WebMap({
+          basemap: 'gray-vector'
+        });
 
-        // ENHANCED: Add timeout to prevent indefinite hanging
-        const initPromise = ReportMapService.createReportMap(
-          mapContainerId,
-          CONFIG.webMapId,
-          {
-            center: CONFIG.map.center,
-            zoom: CONFIG.map.zoom,
-            showLegend: true,
-            showScaleBar: true,
-            constraints: {
-              minZoom: 6,
-              maxZoom: 16
-            }
+        // Clone the road layer for this map view (to avoid sharing layer instances)
+        const roadLayerClone = roadLayer.clone() as FeatureLayer;
+        
+        // Apply simple outline renderer for Figure 1.1
+        console.log('[NetworkMapSection] Applying simple outline renderer...');
+        roadLayerClone.renderer = {
+          type: 'simple',
+          symbol: {
+            type: 'simple-line',
+            color: [255, 170, 0, 0.8], // Orange color matching 2018 report
+            width: 1.5,
+            style: 'solid'
           }
-        );
+        } as any;
 
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Map initialization timeout after 30 seconds')), 30000)
-        );
+        // Add the cloned road layer to the webmap
+        webmap.add(roadLayerClone);
 
-        const { view, webmap, cleanup } = await Promise.race([
-          initPromise,
-          timeoutPromise
-        ]) as any;
+        // Optionally add LA layer if available
+        if (laLayer) {
+          const laLayerClone = laLayer.clone();
+          laLayerClone.visible = false; // Hidden by default
+          laLayerClone.opacity = 0.3;
+          webmap.add(laLayerClone);
+        }
+
+        // Create map view
+        const view = new MapView({
+          container: mapContainerId,
+          map: webmap,
+          center: CONFIG.map.center,
+          zoom: CONFIG.map.zoom,
+          constraints: {
+            minZoom: 6,
+            maxZoom: 16,
+            snapToZoom: false
+          }
+        });
+
+        // Wait for view to be ready
+        await view.when();
 
         // Only proceed if component is still mounted
         if (!mounted) {
           console.log('[NetworkMapSection] Component unmounted during init, cleaning up...');
-          cleanup();
+          view.destroy();
           return;
         }
 
-        // Store references
+        // Add widgets
+        const legend = new Legend({
+          view: view,
+          container: document.createElement('div')
+        });
+
+        const scaleBar = new ScaleBar({
+          view: view,
+          unit: 'metric'
+        });
+
+        view.ui.add(legend, 'bottom-left');
+        view.ui.add(scaleBar, 'bottom-right');
+
+        // Store reference
         viewRef.current = view;
-        cleanupRef.current = cleanup;
 
-        console.log('[NetworkMapSection] Map view created successfully');
-        console.log('[NetworkMapSection] WebMap layers count:', webmap.layers.length);
-
-        // ENHANCED: Apply simple outline renderer with better error handling
-        try {
-          const roadLayer = webmap.layers.find(
-            l => l.title === CONFIG.roadNetworkLayerTitle
-          ) as __esri.FeatureLayer;
-
-          if (!roadLayer) {
-            console.warn('[NetworkMapSection] Road layer not found. Available layers:',
-              webmap.layers.map(l => l.title).join(', '));
-            throw new Error(`Road layer "${CONFIG.roadNetworkLayerTitle}" not found in WebMap`);
-          }
-
-          console.log('[NetworkMapSection] Applying simple outline renderer...');
-
-          // Create simple outline renderer
-          const simpleRenderer = {
-            type: 'simple',
-            symbol: {
-              type: 'simple-line',
-              color: [255, 170, 0, 0.8], // Orange color matching report
-              width: 1.5,
-              style: 'solid'
-            }
-          };
-
-          roadLayer.renderer = simpleRenderer as any;
-          await roadLayer.when();
-          console.log('[NetworkMapSection] Simple renderer applied successfully');
-        } catch (rendererError) {
-          console.error('[NetworkMapSection] Renderer application failed:', rendererError);
-          // Continue anyway - map will show with default symbology
-        }
-
-        ReportMapService.storeViewReference(mapContainerId, view, cleanup);
-
-        console.log('[NetworkMapSection] ✅ Map initialized successfully');
+        console.log('[NetworkMapSection] ✅ Map initialized successfully with directly-loaded layers');
         setLoading(false);
 
       } catch (err) {
@@ -155,20 +159,17 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
 
     initializeMap();
 
-    // Cleanup function - CRITICAL for preventing "map already destroyed" errors
+    // Cleanup function
     return () => {
       mounted = false;
       console.log('[NetworkMapSection] Component unmounting, cleaning up map...');
 
-      if (cleanupRef.current) {
-        cleanupRef.current();
-        cleanupRef.current = null;
+      if (viewRef.current && !viewRef.current.destroyed) {
+        viewRef.current.destroy();
+        viewRef.current = null;
       }
-
-      viewRef.current = null;
-      ReportMapService.cleanupExistingView(mapContainerId);
     };
-  }, []); // Empty deps - only initialize once
+  }, [roadLayer, laLayer]); // Re-run when layers become available
 
   // Loading state
   if (loading) {

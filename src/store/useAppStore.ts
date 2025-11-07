@@ -171,15 +171,22 @@ const useAppStore = create<AppState>()(
         initializeMapWithWebMap: async (containerId: string) => {
           const state = get();
 
-          // Strengthened guard: Check both initialized flag AND layer existence
-          if (state.mapInitialized || state.roadLayer) {
-            console.log('[Map Init] Already initialized, skipping');
-            return;
-          }
-
           const container = document.getElementById(containerId);
           if (!container) {
             throw new Error(`Container ${containerId} not found`);
+          }
+
+          // Check if container already has a valid view
+          const existingView = (container as any).__esri_mapview;
+          if (existingView && !existingView.destroyed && state.mapInitialized) {
+            console.log('[Map Init] Already initialized with valid view');
+            return;
+          }
+
+          // If view was destroyed, allow re-initialization
+          if (state.mapInitialized && (!existingView || existingView.destroyed)) {
+            console.log('[Map Init] Previous view destroyed, re-initializing...');
+            set({ mapInitialized: false, roadLayer: null, mapView: null, webmap: null });
           }
 
           // Additional guard: Prevent concurrent initialization
@@ -355,10 +362,43 @@ const useAppStore = create<AppState>()(
           }
         },
 
-        setShowFilters: (b) => set({ showFilters: b }),
+        setShowFilters: (b) => {
+          if (b) {
+            // Turn off Chart and Compare when enabling Filters
+            set({
+              showFilters: true,
+              showChart: false,
+              showSwipe: false
+            });
+          } else {
+            set({ showFilters: false });
+          }
+        },
         setShowStats: (b) => set({ showStats: b }),
-        setShowChart: (b) => set({ showChart: b }),
-        setShowSwipe: (b) => set({ showSwipe: b }),
+        setShowChart: (b) => {
+          if (b) {
+            // Turn off Filters and Compare when enabling Chart
+            set({
+              showChart: true,
+              showFilters: false,
+              showSwipe: false
+            });
+          } else {
+            set({ showChart: false });
+          }
+        },
+        setShowSwipe: (b) => {
+          if (b) {
+            // Turn off Filters and Chart when enabling Compare
+            set({
+              showSwipe: true,
+              showFilters: false,
+              showChart: false
+            });
+          } else {
+            set({ showSwipe: false });
+          }
+        },
 
         setRoadLayerVisibility: (visible) => {
           const { roadLayer } = get();
@@ -397,15 +437,170 @@ const useAppStore = create<AppState>()(
         // should remain unchanged. Only the initialize methods were modified.
 
         clearAllFilters: async () => {
-          // ... (keep existing implementation)
+          const state = get();
+
+          // Preserve current year selection
+          const currentYear = state.currentFilters.year || CONFIG.defaultYear;
+
+          // Reset filters while maintaining year
+          const resetFilters = {
+            localAuthority: [],
+            subgroup: [],
+            route: [],
+            year: currentYear,
+          };
+
+          set({
+            currentFilters: resetFilters,
+            currentStats: null,
+            appliedFiltersCount: 0,
+            loading: true,
+            loadingMessage: 'Clearing filters...'
+          });
+
+          try {
+            if (state.roadLayer) {
+              (state.roadLayer as any).definitionExpression = '1=1';
+              await state.roadLayer.when();
+            }
+
+            if (state.mapView && state.initialExtent) {
+              await state.mapView.goTo(state.initialExtent, {
+                duration: 1000,
+                easing: 'ease-in-out'
+              });
+            }
+
+            await state.updateRenderer();
+            await state.calculateStatistics();
+
+            message.success(`Filters cleared. Showing all ${state.activeKpi.toUpperCase()} data for ${currentYear}`);
+          } catch (error) {
+            console.error('Error clearing filters:', error);
+            message.error('Failed to reset filters completely');
+          } finally {
+            set({ loading: false, loadingMessage: null });
+          }
         },
 
         applyFilters: async () => {
-          // ... (keep existing implementation)
+          const state = get();
+          const { roadLayer } = state;
+
+          if (!roadLayer || !roadLayer.loaded) {
+            message.error('Road layer not loaded. Please refresh the page.');
+            return;
+          }
+
+          // Validate filters before applying
+          const validatedFilters = state.validateAndFixFilters();
+
+          // Build definition expression (year NOT included in WHERE clause)
+          const where = QueryService.buildDefinitionExpression({
+            localAuthority: validatedFilters.localAuthority,
+            subgroup: validatedFilters.subgroup,
+            route: validatedFilters.route
+          });
+
+          const filterCount =
+            (validatedFilters.localAuthority.length > 0 ? 1 : 0) +
+            (validatedFilters.subgroup.length > 0 ? 1 : 0) +
+            (validatedFilters.route.length > 0 ? 1 : 0);
+
+          set({ appliedFiltersCount: filterCount, loading: true, loadingMessage: 'Applying filters...' });
+
+          try {
+            // Apply definition expression
+            (roadLayer as any).definitionExpression = where;
+
+            // Wait for layer to process the definition change
+            await roadLayer.when();
+
+            // Zoom to the filtered extent
+            await QueryService.zoomToDefinition(state.mapView, roadLayer, where);
+
+            // Update renderer
+            await state.updateRenderer();
+
+            set({ showStats: true });
+            await state.calculateStatistics();
+
+            if (filterCount > 0) {
+              message.success(`${filterCount} filter${filterCount > 1 ? 's' : ''} applied`);
+            } else {
+              message.info('Showing all data for ' + validatedFilters.year);
+            }
+
+          } catch (error) {
+            console.error('Error applying filters:', error);
+            message.error('Failed to apply filters completely');
+            await state.calculateStatistics();
+          } finally {
+            set({ loading: false, loadingMessage: null });
+          }
         },
 
         calculateStatistics: async () => {
-          // ... (keep existing implementation)
+          const state = get();
+          const { roadLayer, activeKpi } = state;
+
+          if (!roadLayer) {
+            console.warn('[Statistics] Cannot calculate - road layer not loaded');
+            return;
+          }
+
+          // Validate filters before calculating
+          const validatedFilters = state.validateAndFixFilters();
+          if (typeof validatedFilters.year !== 'number') {
+            console.error('[Statistics] Year validation failed, cannot calculate statistics');
+            return;
+          }
+
+          try {
+            const stats = await StatisticsService.computeSummary(
+              roadLayer,
+              validatedFilters,
+              activeKpi
+            );
+
+            if (stats.totalSegments === 0) {
+              message.warning('No road segments match the current filters');
+              set({
+                currentStats: stats
+              });
+            } else {
+              set({ currentStats: stats });
+              console.log(`Statistics calculated: ${stats.totalSegments} segments, ` +
+                        `${stats.totalLengthKm} km total length`);
+            }
+          } catch (error) {
+            console.error('Error calculating statistics:', error);
+            message.error('Failed to calculate statistics');
+
+            const year = validatedFilters.year || CONFIG.defaultYear;
+            const emptyStats: SummaryStatistics = {
+              kpi: activeKpi.toUpperCase(),
+              year: year,
+              avgValue: 0,
+              minValue: 0,
+              maxValue: 0,
+              totalSegments: 0,
+              totalLengthKm: 0,
+              veryGoodCount: 0,
+              goodCount: 0,
+              fairCount: 0,
+              poorCount: 0,
+              veryPoorCount: 0,
+              veryGoodPct: 0,
+              goodPct: 0,
+              fairPct: 0,
+              poorPct: 0,
+              veryPoorPct: 0,
+              fairOrBetterPct: 0,
+              lastUpdated: new Date().toISOString()
+            };
+            set({ currentStats: emptyStats });
+          }
         },
 
         /**
@@ -486,28 +681,145 @@ const useAppStore = create<AppState>()(
         },
 
         validateAndFixFilters: () => {
-          // ... (keep existing implementation)
-          return get().currentFilters;
+          const state = get();
+          const currentFilters = { ...state.currentFilters };
+
+          // Validate year (single value)
+          if (typeof currentFilters.year === 'string') {
+            const numYear = parseInt(currentFilters.year, 10);
+            if (!isNaN(numYear) && numYear >= 2000 && numYear <= 2030) {
+              console.warn(`[Data Validation] Converted year from string "${currentFilters.year}" to number ${numYear}`);
+              currentFilters.year = numYear;
+            } else {
+              console.warn(`[Data Validation] Invalid year value "${currentFilters.year}", using default`);
+              currentFilters.year = CONFIG.defaultYear;
+            }
+          } else if (typeof currentFilters.year !== 'number' || currentFilters.year < 2000 || currentFilters.year > 2030) {
+            console.warn('[Data Validation] Year filter missing or invalid, resetting to default');
+            currentFilters.year = CONFIG.defaultYear;
+          }
+
+          // Log the final validated year for debugging
+          console.log('[Data Validation] Final year filter:', currentFilters.year);
+
+          // Update state with validated filters
+          set({ currentFilters });
+          return currentFilters;
         },
 
         calculateChartFilteredStatistics: async () => {
-          // ... (keep existing implementation)
+          const state = get();
+          const { roadLayer, chartSelections, currentFilters } = state;
+
+          if (!roadLayer || chartSelections.length === 0) {
+            set({
+              chartFilteredStats: null,
+              isCalculatingChartStats: false
+            });
+            return;
+          }
+
+          set({ isCalculatingChartStats: true });
+
+          try {
+            console.log('[Chart Stats] Calculating for selections:', chartSelections);
+
+            const stats = await StatisticsService.computeChartFilteredStatistics(
+              roadLayer,
+              chartSelections,
+              currentFilters
+            );
+
+            set({
+              chartFilteredStats: stats,
+              isCalculatingChartStats: false
+            });
+
+            console.log('[Chart Stats] Calculated:', stats);
+
+          } catch (error) {
+            console.error('Error calculating chart-filtered statistics:', error);
+            set({
+              chartFilteredStats: null,
+              isCalculatingChartStats: false
+            });
+          }
         },
 
         addChartSelection: (selection) => {
-          // ... (keep existing implementation)
+          const state = get();
+          const exists = state.chartSelections.some(s =>
+            s.group === selection.group &&
+            s.condition === selection.condition &&
+            s.kpi === selection.kpi &&
+            s.year === selection.year
+          );
+
+          if (!exists) {
+            set({
+              chartSelections: [...state.chartSelections, selection],
+              isChartFilterActive: true
+            });
+            console.log('[Chart Selection] Added:', selection);
+          }
         },
 
         removeChartSelection: (selection) => {
-          // ... (keep existing implementation)
+          const state = get();
+          const filtered = state.chartSelections.filter(s => !(
+            s.group === selection.group &&
+            s.condition === selection.condition &&
+            s.kpi === selection.kpi &&
+            s.year === selection.year
+          ));
+
+          set({
+            chartSelections: filtered,
+            isChartFilterActive: filtered.length > 0
+          });
+          console.log('[Chart Selection] Removed:', selection);
         },
 
         clearChartSelections: () => {
-          // ... (keep existing implementation)
+          set({
+            chartSelections: [],
+            isChartFilterActive: false,
+            chartFilteredStats: null
+          });
+          console.log('[Chart Selection] Cleared all selections');
         },
 
         toggleChartSelection: (selection, isMultiSelect) => {
-          // ... (keep existing implementation)
+          const state = get();
+          const exists = state.chartSelections.some(s =>
+            s.group === selection.group &&
+            s.condition === selection.condition &&
+            s.kpi === selection.kpi &&
+            s.year === selection.year
+          );
+
+          if (isMultiSelect) {
+            if (exists) {
+              state.removeChartSelection(selection);
+            } else {
+              state.addChartSelection(selection);
+            }
+          } else {
+            if (exists && state.chartSelections.length === 1) {
+              state.clearChartSelections();
+            } else {
+              set({
+                chartSelections: [selection],
+                isChartFilterActive: true
+              });
+              console.log('[Chart Selection] Replaced with:', selection);
+            }
+          }
+
+          // Auto-calculate chart statistics after selection change
+          setTimeout(() => {
+            state.calculateChartFilteredStatistics();
+          }, 100);
         },
 
         setSwipeYears: (left, right) => {
@@ -532,15 +844,66 @@ const useAppStore = create<AppState>()(
         },
 
         updateLALayerRenderer: async () => {
-          // ... (keep existing implementation)
+          const { laLayer, activeKpi, currentFilters, laMetricType, themeMode } = get();
+
+          if (!laLayer) {
+            console.warn('Cannot update renderer: LA layer not set');
+            return;
+          }
+          // Get the active year (use first selected year)
+          const year = currentFilters.year || CONFIG.defaultYear;
+
+          console.log(`Updating LA renderer: ${activeKpi}/${year}/${laMetricType}/${themeMode}`);
+
+          try {
+            // Create renderer using LARendererService with continuous gradient
+            // Pass the layer to enable max value queries for dynamic scaling
+            const renderer = await LARendererService.createLARenderer(
+              activeKpi,
+              year,
+              laMetricType,
+              themeMode,
+              laLayer
+            );
+
+            // Apply renderer to layer
+            laLayer.renderer = renderer;
+
+            console.log('✓ LA layer renderer updated with continuous gradient');
+          } catch (error) {
+            console.error('Error updating LA layer renderer:', error);
+          }
         },
 
         enterSwipeMode: () => {
-          // ... (keep existing implementation)
+          const { roadLayer, laLayer, laLayerVisible } = get();
+          if (roadLayer) {
+            set({
+              preSwipeDefinitionExpression: (roadLayer as any).definitionExpression || '1=1',
+              isSwipeActive: true
+            });
+          }
+          if (laLayer) {
+            set({ preSwipeLALayerVisible: laLayerVisible });
+            laLayer.visible = false;
+          }
+          get().hideRoadNetworkForSwipe();
         },
 
         exitSwipeMode: () => {
-          // ... (keep existing implementation)
+          const { roadLayer, preSwipeDefinitionExpression, laLayer, preSwipeLALayerVisible } = get();
+          if (roadLayer) {
+            (roadLayer as any).definitionExpression = preSwipeDefinitionExpression || '1=1';
+          }
+          if (laLayer) {
+            laLayer.visible = preSwipeLALayerVisible ?? false;
+          }
+          set({
+            preSwipeDefinitionExpression: null,
+            preSwipeLALayerVisible: null,
+            isSwipeActive: false
+          });
+          get().restoreRoadNetworkVisibility();
         },
       }),
       {

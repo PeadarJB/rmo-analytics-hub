@@ -5,6 +5,7 @@ import { Card, Table, Spin, Alert, Button, Space, Typography, Tabs } from 'antd'
 import { TableOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { KPIKey, KPI_LABELS, getConditionClass } from '@/config/kpiConfig';
+import PaginationService from '@/services/PaginationService';
 
 const { Title, Paragraph } = Typography;
 const { TabPane } = Tabs;
@@ -153,14 +154,14 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
 
     console.log('[LAPerformanceTables] Querying average values...');
 
-    const query = roadLayer.createQuery();
-    query.where = 'AIRI_2025 IS NOT NULL';
-    query.outFields = ['LA', 'AIRI_2025', 'LRUT_2025', 'CSC_2025', 'MPD_2025', 'ModeRating_2025', 'LPV3_2025', 'Shape_Length'];
-    query.returnGeometry = false;
-
     try {
-      const result = await roadLayer.queryFeatures(query);
-      console.log('[LAPerformanceTables] Query returned', result.features.length, 'features');
+      const result = await PaginationService.queryAllFeatures(roadLayer, {
+        where: 'AIRI_2025 IS NOT NULL',
+        outFields: ['LA', 'AIRI_2025', 'LRUT_2025', 'CSC_2025', 'MPD_2025', 'ModeRating_2025', 'LPV3_2025', 'Shape_Length'],
+        returnGeometry: false
+      });
+
+      console.log(`[LAPerformanceTables] Query returned ${result.totalCount} features (${result.pagesQueried} pages)`);
 
       if (result.features.length === 0) {
         console.warn('[LAPerformanceTables] No features returned from query');
@@ -284,12 +285,15 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
   ): Promise<ConditionClassByLA[]> => {
     if (!roadLayer) return [];
 
-    const query = roadLayer.createQuery();
-    query.where = `${fieldName} IS NOT NULL`;
-    query.outFields = ['LA', fieldName, 'Shape_Length'];
-    query.returnGeometry = false;
+    console.log(`[LAPerformanceTables] Querying condition classes for ${kpi}...`);
 
-    const result = await roadLayer.queryFeatures(query);
+    const result = await PaginationService.queryAllFeatures(roadLayer, {
+      where: `${fieldName} IS NOT NULL`,
+      outFields: ['LA', fieldName, 'Shape_Length'],
+      returnGeometry: false
+    });
+
+    console.log(`[LAPerformanceTables] Retrieved ${result.totalCount} features for ${kpi} (${result.pagesQueried} pages)`);
 
     // Group by LA
     const laMap = new Map<string, {

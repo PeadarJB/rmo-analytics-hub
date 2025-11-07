@@ -18,6 +18,7 @@ import { Line } from 'react-chartjs-2';
 import { KPIKey, KPI_LABELS } from '@/config/kpiConfig';
 import { getKPIFieldName } from '@/config/layerConfig';
 import useAppStore from '@/store/useAppStore';
+import PaginationService from '@/services/PaginationService';
 
 // Register Chart.js components
 ChartJS.register(
@@ -190,14 +191,18 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
       const fieldName = getKPIFieldName(kpi, targetYear, false);
       const config = kpiConfigs[kpi];
 
-      // Query all features with this KPI value
-      const query = roadLayer.createQuery();
-      query.where = `${fieldName} IS NOT NULL`;
-      query.outFields = [fieldName];
-      query.returnGeometry = false;
-
       try {
-        const result = await roadLayer.queryFeatures(query);
+        console.log(`[CumulativeFrequency] Querying all features for ${kpi}...`);
+
+        const result = await PaginationService.queryAllFeatures(roadLayer, {
+          where: `${fieldName} IS NOT NULL`,
+          outFields: [fieldName],
+          returnGeometry: false,
+          orderByFields: ['OBJECTID ASC']
+        });
+
+        console.log(`[CumulativeFrequency] Retrieved ${result.totalCount} features for ${kpi} (${result.pagesQueried} pages)`);
+
         const values = result.features
           .map(f => f.attributes[fieldName] as number)
           .filter(v => v !== null && v !== undefined && !isNaN(v));

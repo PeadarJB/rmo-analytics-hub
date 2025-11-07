@@ -1,6 +1,6 @@
 // src/components/report/section3/CumulativeFrequencyCharts.tsx
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, Radio, Spin, Alert, Space, Switch, Statistic, Row, Col, theme } from 'antd';
+import { Card, Radio, Spin, Alert, Space, Switch, Statistic, Row, Col, theme, Progress } from 'antd';
 import type { RadioChangeEvent } from 'antd';
 import {
   Chart as ChartJS,
@@ -16,9 +16,8 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { KPIKey, KPI_LABELS } from '@/config/kpiConfig';
-import { getKPIFieldName } from '@/config/layerConfig';
 import useAppStore from '@/store/useAppStore';
-import PaginationService from '@/services/PaginationService';
+import CumulativeFrequencyService, { CumulativeData } from '@/services/CumulativeFrequencyService';
 
 // Register Chart.js components
 ChartJS.register(
@@ -32,20 +31,7 @@ ChartJS.register(
   Filler
 );
 
-interface CumulativeDataPoint {
-  value: number;
-  cumulativePercent: number;
-}
-
-interface CumulativeData {
-  dataPoints: CumulativeDataPoint[];
-  stats: {
-    average: number;
-    median: number;
-    percentile90: number;
-    count: number;
-  };
-}
+// CumulativeData is now imported from CumulativeFrequencyService
 
 interface CumulativeFrequencyChartsProps {
   year?: number;
@@ -75,6 +61,10 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
   // Store cumulative data for all KPIs
   const [cumulativeData, setCumulativeData] = useState<Record<KPIKey, CumulativeData> | null>(null);
   const [comparisonData, setComparisonData] = useState<Record<KPIKey, CumulativeData> | null>(null);
+
+  // Progress tracking
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('Initializing...');
 
   // KPI configuration with ranges and colors
   const kpiConfigs: Record<KPIKey, {
@@ -122,108 +112,36 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
   };
 
   /**
-   * Calculate cumulative frequency distribution for a KPI
-   */
-  const calculateCumulativeDistribution = (
-    values: number[],
-    ranges: { min: number; max: number; step: number }
-  ): CumulativeDataPoint[] => {
-    if (values.length === 0) return [];
-
-    // Sort values
-    const sortedValues = [...values].sort((a, b) => a - b);
-    const totalCount = sortedValues.length;
-
-    // Calculate statistics
-    const dataPoints: CumulativeDataPoint[] = [];
-
-    for (let value = ranges.min; value <= ranges.max; value += ranges.step) {
-      const count = sortedValues.filter(v => v <= value).length;
-      const cumulativePercent = (count / totalCount) * 100;
-
-      dataPoints.push({
-        value: Math.round(value * 100) / 100,
-        cumulativePercent: Math.round(cumulativePercent * 100) / 100
-      });
-    }
-
-    return dataPoints;
-  };
-
-  /**
-   * Calculate statistics for a dataset
-   */
-  const calculateStats = (values: number[]) => {
-    if (values.length === 0) {
-      return { average: 0, median: 0, percentile90: 0, count: 0 };
-    }
-
-    const sorted = [...values].sort((a, b) => a - b);
-    const sum = values.reduce((acc, val) => acc + val, 0);
-    const average = sum / values.length;
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const percentile90 = sorted[Math.floor(sorted.length * 0.9)];
-
-    return {
-      average: Math.round(average * 100) / 100,
-      median: Math.round(median * 100) / 100,
-      percentile90: Math.round(percentile90 * 100) / 100,
-      count: values.length
-    };
-  };
-
-  /**
-   * Fetch cumulative data for all KPIs
+   * Fetch cumulative data for all KPIs using the optimized service
+   * This now queries all KPIs in parallel instead of sequentially
    */
   const fetchCumulativeData = async (targetYear: number) => {
     if (!roadLayer) {
       throw new Error('Road layer not available');
     }
 
-    console.log('[CumulativeFrequencyCharts] Querying layer:', roadLayer.title);
+    console.log('[CumulativeFrequencyCharts] Fetching data for year:', targetYear);
 
-    const results: Record<string, CumulativeData> = {};
-
-    // Fetch data for each KPI
     const kpiKeys: KPIKey[] = ['iri', 'rut', 'mpd', 'csc', 'psci'];
 
-    for (const kpi of kpiKeys) {
-      const fieldName = getKPIFieldName(kpi, targetYear, false);
-      const config = kpiConfigs[kpi];
-
-      try {
-        console.log(`[CumulativeFrequency] Querying all features for ${kpi}...`);
-
-        const result = await PaginationService.queryAllFeatures(roadLayer, {
-          where: `${fieldName} IS NOT NULL`,
-          outFields: [fieldName],
-          returnGeometry: false,
-          orderByFields: ['OBJECTID ASC']
-        });
-
-        console.log(`[CumulativeFrequency] Retrieved ${result.totalCount} features for ${kpi} (${result.pagesQueried} pages)`);
-
-        const values = result.features
-          .map(f => f.attributes[fieldName] as number)
-          .filter(v => v !== null && v !== undefined && !isNaN(v));
-
-        const dataPoints = calculateCumulativeDistribution(values, config.ranges);
-        const stats = calculateStats(values);
-
-        results[kpi] = { dataPoints, stats };
-      } catch (err) {
-        console.error(`Error fetching ${kpi} data:`, err);
-        results[kpi] = {
-          dataPoints: [],
-          stats: { average: 0, median: 0, percentile90: 0, count: 0 }
-        };
+    // Fetch all KPIs in parallel with progress tracking
+    const results = await CumulativeFrequencyService.fetchCumulativeDataForAllKPIs(
+      roadLayer,
+      kpiKeys,
+      targetYear,
+      kpiConfigs,
+      (kpi, index, total) => {
+        // Update progress as each KPI completes
+        const progress = Math.round((index / total) * 100);
+        setLoadingProgress(progress);
+        setLoadingMessage(`Loading ${KPI_LABELS[kpi]} (${index}/${total})...`);
       }
-    }
+    );
 
-    return results as Record<KPIKey, CumulativeData>;
+    return results;
   };
 
-  // Load data on mount
+  // Load data on mount or when year/comparison changes
   useEffect(() => {
     const loadData = async () => {
       if (!roadLayer) {
@@ -235,16 +153,26 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
       try {
         setLoading(true);
         setError(null);
+        setLoadingProgress(0);
+        setLoadingMessage('Initializing...');
 
         // Fetch current year data
+        setLoadingMessage(`Loading ${year} data...`);
         const currentData = await fetchCumulativeData(year);
         setCumulativeData(currentData);
 
         // Optionally fetch comparison data (2018)
         if (compareYears) {
+          setLoadingProgress(50);
+          setLoadingMessage('Loading 2018 comparison data...');
           const compareData = await fetchCumulativeData(2018);
           setComparisonData(compareData);
+        } else {
+          setComparisonData(null);
         }
+
+        setLoadingProgress(100);
+        setLoadingMessage('Complete!');
       } catch (err) {
         console.error('Error loading cumulative data:', err);
         setError('Failed to load cumulative frequency data');
@@ -383,10 +311,29 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
       <div style={{
         height: 500,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        gap: 16
       }}>
-        <Spin size="large" tip="Loading cumulative frequency data..." />
+        <Spin size="large" />
+        <div style={{ width: 300 }}>
+          <Progress
+            percent={loadingProgress}
+            status="active"
+            strokeColor={{
+              '0%': '#108ee9',
+              '100%': '#87d068',
+            }}
+          />
+          <div style={{
+            textAlign: 'center',
+            marginTop: 8,
+            color: themeMode === 'dark' ? token.colorTextSecondary : token.colorTextSecondary
+          }}>
+            {loadingMessage}
+          </div>
+        </div>
       </div>
     );
   }

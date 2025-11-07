@@ -71,8 +71,17 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
   });
 
   useEffect(() => {
+    console.log('[LAPerformanceTables] useEffect triggered');
+    console.log('[LAPerformanceTables] roadLayer:', roadLayer);
+
     if (roadLayer) {
+      console.log('[LAPerformanceTables] Road layer available, fetching data...');
+      console.log('[LAPerformanceTables] Layer URL:', roadLayer.url);
+      console.log('[LAPerformanceTables] Layer loaded:', roadLayer.loaded);
       fetchAllData();
+    } else {
+      console.warn('[LAPerformanceTables] Road layer is null or undefined');
+      setError('Road layer not available. Please ensure data is loaded.');
     }
   }, [roadLayer]);
 
@@ -80,23 +89,54 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
    * Fetch all LA performance data
    */
   const fetchAllData = async () => {
-    if (!roadLayer) return;
+    if (!roadLayer) {
+      console.error('[LAPerformanceTables] Cannot fetch - roadLayer is null');
+      setError('Data layer not available');
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
+      console.log('[LAPerformanceTables] Starting data fetch...');
+
+      // ENHANCED: Ensure layer is loaded before querying
+      if (!roadLayer.loaded) {
+        console.log('[LAPerformanceTables] Waiting for layer to load...');
+        await roadLayer.load();
+      }
+
+      console.log('[LAPerformanceTables] Layer loaded, checking fields...');
+
+      // ENHANCED: Verify required fields exist
+      const requiredFields = ['LA', 'AIRI_2025', 'LRUT_2025', 'CSC_2025', 'MPD_2025', 'ModeRating_2025', 'LPV3_2025'];
+      const layerFields = roadLayer.fields.map(f => f.name);
+      const missingFields = requiredFields.filter(f => !layerFields.includes(f));
+
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required fields: ${missingFields.join(', ')}. Available fields: ${layerFields.join(', ')}`);
+      }
+
+      console.log('[LAPerformanceTables] All required fields present, executing queries...');
+
       // Fetch both average values and condition class distributions in parallel
       const [avgData, condData] = await Promise.all([
         fetchAveragesByLA(),
         fetchConditionClassesByLA()
       ]);
 
+      console.log('[LAPerformanceTables] ✅ Data fetched successfully');
+      console.log('[LAPerformanceTables] Average data rows:', avgData.length);
+      console.log('[LAPerformanceTables] Condition data keys:', Object.keys(condData));
+
       setAverageData(avgData);
       setConditionData(condData);
+
     } catch (err) {
-      console.error('Error fetching LA performance data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      console.error('[LAPerformanceTables] ❌ Error fetching LA performance data:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Failed to load data: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -106,14 +146,26 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
    * Fetch average values for all KPIs by Local Authority
    */
   const fetchAveragesByLA = async (): Promise<AverageByLA[]> => {
-    if (!roadLayer) return [];
+    if (!roadLayer) {
+      console.error('[LAPerformanceTables] fetchAveragesByLA - roadLayer is null');
+      return [];
+    }
+
+    console.log('[LAPerformanceTables] Querying average values...');
 
     const query = roadLayer.createQuery();
     query.where = 'AIRI_2025 IS NOT NULL';
     query.outFields = ['LA', 'AIRI_2025', 'LRUT_2025', 'CSC_2025', 'MPD_2025', 'ModeRating_2025', 'LPV3_2025', 'Shape_Length'];
     query.returnGeometry = false;
 
-    const result = await roadLayer.queryFeatures(query);
+    try {
+      const result = await roadLayer.queryFeatures(query);
+      console.log('[LAPerformanceTables] Query returned', result.features.length, 'features');
+
+      if (result.features.length === 0) {
+        console.warn('[LAPerformanceTables] No features returned from query');
+        return [];
+      }
 
     // Group by LA and calculate averages
     const laMap = new Map<string, {
@@ -126,17 +178,22 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
       lengths: number[];
     }>();
 
-    result.features.forEach(feature => {
-      const la = feature.attributes.LA;
-      const iri = feature.attributes.AIRI_2025;
-      const rut = feature.attributes.LRUT_2025;
-      const csc = feature.attributes.CSC_2025;
-      const mpd = feature.attributes.MPD_2025;
-      const psci = feature.attributes.ModeRating_2025;
-      const lpv3 = feature.attributes.LPV3_2025;
-      const length = feature.attributes.Shape_Length;
+      result.features.forEach(feature => {
+        const la = feature.attributes.LA;
+        if (!la) {
+          console.warn('[LAPerformanceTables] Feature missing LA attribute:', feature.attributes);
+          return;
+        }
 
-      if (!laMap.has(la)) {
+        const iri = feature.attributes.AIRI_2025;
+        const rut = feature.attributes.LRUT_2025;
+        const csc = feature.attributes.CSC_2025;
+        const mpd = feature.attributes.MPD_2025;
+        const psci = feature.attributes.ModeRating_2025;
+        const lpv3 = feature.attributes.LPV3_2025;
+        const length = feature.attributes.Shape_Length;
+
+        if (!laMap.has(la)) {
         laMap.set(la, {
           iri: [],
           rut: [],
@@ -154,26 +211,32 @@ export const LAPerformanceTables: React.FC<LAPerformanceTablesProps> = ({ roadLa
       if (csc != null) laData.csc.push(csc);
       if (mpd != null) laData.mpd.push(mpd);
       if (psci != null) laData.psci.push(psci);
-      if (lpv3 != null) laData.lpv3.push(lpv3);
-      if (length != null) laData.lengths.push(length);
-    });
-
-    // Calculate averages
-    const averages: AverageByLA[] = [];
-    laMap.forEach((data, la) => {
-      averages.push({
-        localAuthority: la,
-        iri: data.iri.length > 0 ? data.iri.reduce((a, b) => a + b, 0) / data.iri.length : 0,
-        rut: data.rut.length > 0 ? data.rut.reduce((a, b) => a + b, 0) / data.rut.length : 0,
-        csc: data.csc.length > 0 ? data.csc.reduce((a, b) => a + b, 0) / data.csc.length : 0,
-        mpd: data.mpd.length > 0 ? data.mpd.reduce((a, b) => a + b, 0) / data.mpd.length : 0,
-        psci: data.psci.length > 0 ? data.psci.reduce((a, b) => a + b, 0) / data.psci.length : 0,
-        lpv3: data.lpv3.length > 0 ? data.lpv3.reduce((a, b) => a + b, 0) / data.lpv3.length : 0,
-        totalLength: data.lengths.reduce((a, b) => a + b, 0) / 1000 // Convert to km
+        if (lpv3 != null) laData.lpv3.push(lpv3);
+        if (length != null) laData.lengths.push(length);
       });
-    });
 
-    return averages.sort((a, b) => a.localAuthority.localeCompare(b.localAuthority));
+      // Calculate averages
+      const averages: AverageByLA[] = [];
+      laMap.forEach((data, la) => {
+        averages.push({
+          localAuthority: la,
+          iri: data.iri.length > 0 ? data.iri.reduce((a, b) => a + b, 0) / data.iri.length : 0,
+          rut: data.rut.length > 0 ? data.rut.reduce((a, b) => a + b, 0) / data.rut.length : 0,
+          csc: data.csc.length > 0 ? data.csc.reduce((a, b) => a + b, 0) / data.csc.length : 0,
+          mpd: data.mpd.length > 0 ? data.mpd.reduce((a, b) => a + b, 0) / data.mpd.length : 0,
+          psci: data.psci.length > 0 ? data.psci.reduce((a, b) => a + b, 0) / data.psci.length : 0,
+          lpv3: data.lpv3.length > 0 ? data.lpv3.reduce((a, b) => a + b, 0) / data.lpv3.length : 0,
+          totalLength: data.lengths.reduce((a, b) => a + b, 0) / 1000 // Convert to km
+        });
+      });
+
+      console.log('[LAPerformanceTables] Calculated averages for', averages.length, 'Local Authorities');
+      return averages.sort((a, b) => a.localAuthority.localeCompare(b.localAuthority));
+
+    } catch (error) {
+      console.error('[LAPerformanceTables] Query error:', error);
+      throw error;
+    }
   };
 
   /**

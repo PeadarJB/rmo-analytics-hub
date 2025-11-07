@@ -1,6 +1,6 @@
 // src/pages/RegionalReport2025/index.tsx
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { Layout, Menu, Typography, theme, Card, Space, Spin } from 'antd';
+import { Layout, Menu, Typography, theme, Card, Space, Spin, Alert } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   BarChartOutlined,
@@ -137,6 +137,19 @@ const RegionalReport2025: React.FC = () => {
         );
 
       case 'section4':
+        if (!roadLayer) {
+          return (
+            <Card>
+              <Alert
+                message="Data Not Available"
+                description="Road layer data is still loading. Please wait..."
+                type="warning"
+                showIcon
+              />
+            </Card>
+          );
+        }
+
         return (
           <Suspense fallback={
             <div style={{

@@ -36,7 +36,11 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
 
   useEffect(() => {
     // Guard: Prevent multiple initializations
-    if (!mapRef.current) return;
+    if (!mapRef.current) {
+      console.log('[NetworkMapSection] Map container ref not ready');
+      return;
+    }
+
     if (viewRef.current && !viewRef.current.destroyed) {
       console.log('[NetworkMapSection] Map already initialized');
       return;
@@ -49,13 +53,21 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
         setLoading(true);
         setError(null);
 
-        console.log('[NetworkMapSection] Initializing independent map instance...');
+        console.log('[NetworkMapSection] Starting map initialization...');
+        console.log('[NetworkMapSection] Using WebMap ID:', CONFIG.webMapId);
+        console.log('[NetworkMapSection] Container ID:', mapContainerId);
+
+        // ENHANCED: Verify container exists in DOM
+        const container = document.getElementById(mapContainerId);
+        if (!container) {
+          throw new Error(`Container element '${mapContainerId}' not found in DOM`);
+        }
 
         // Clean up any existing map in this container
         ReportMapService.cleanupExistingView(mapContainerId);
 
-        // Create independent map instance (NOT using store's webmap)
-        const { view, webmap, cleanup } = await ReportMapService.createReportMap(
+        // ENHANCED: Add timeout to prevent indefinite hanging
+        const initPromise = ReportMapService.createReportMap(
           mapContainerId,
           CONFIG.webMapId,
           {
@@ -70,8 +82,18 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
           }
         );
 
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Map initialization timeout after 30 seconds')), 30000)
+        );
+
+        const { view, webmap, cleanup } = await Promise.race([
+          initPromise,
+          timeoutPromise
+        ]) as any;
+
         // Only proceed if component is still mounted
         if (!mounted) {
+          console.log('[NetworkMapSection] Component unmounted during init, cleaning up...');
           cleanup();
           return;
         }
@@ -80,12 +102,21 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
         viewRef.current = view;
         cleanupRef.current = cleanup;
 
-        // Apply simple outline renderer (no condition colors)
-        const roadLayer = webmap.layers.find(
-          l => l.title === CONFIG.roadNetworkLayerTitle
-        ) as __esri.FeatureLayer;
+        console.log('[NetworkMapSection] Map view created successfully');
+        console.log('[NetworkMapSection] WebMap layers count:', webmap.layers.length);
 
-        if (roadLayer) {
+        // ENHANCED: Apply simple outline renderer with better error handling
+        try {
+          const roadLayer = webmap.layers.find(
+            l => l.title === CONFIG.roadNetworkLayerTitle
+          ) as __esri.FeatureLayer;
+
+          if (!roadLayer) {
+            console.warn('[NetworkMapSection] Road layer not found. Available layers:',
+              webmap.layers.map(l => l.title).join(', '));
+            throw new Error(`Road layer "${CONFIG.roadNetworkLayerTitle}" not found in WebMap`);
+          }
+
           console.log('[NetworkMapSection] Applying simple outline renderer...');
 
           // Create simple outline renderer
@@ -101,18 +132,22 @@ const NetworkMapSection: React.FC<NetworkMapSectionProps> = ({
 
           roadLayer.renderer = simpleRenderer as any;
           await roadLayer.when();
-          console.log('[NetworkMapSection] Simple renderer applied');
+          console.log('[NetworkMapSection] Simple renderer applied successfully');
+        } catch (rendererError) {
+          console.error('[NetworkMapSection] Renderer application failed:', rendererError);
+          // Continue anyway - map will show with default symbology
         }
 
         ReportMapService.storeViewReference(mapContainerId, view, cleanup);
 
-        console.log('[NetworkMapSection] Map initialized successfully');
+        console.log('[NetworkMapSection] ✅ Map initialized successfully');
         setLoading(false);
 
       } catch (err) {
-        console.error('[NetworkMapSection] Error initializing map:', err);
+        console.error('[NetworkMapSection] ❌ Error initializing map:', err);
         if (mounted) {
-          setError(`Failed to initialize map: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+          setError(`Failed to initialize map: ${errorMessage}`);
           setLoading(false);
         }
       }

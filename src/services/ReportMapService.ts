@@ -40,23 +40,47 @@ export class ReportMapService {
       };
     }
   ): Promise<{ view: MapView; webmap: WebMap; cleanup: () => void }> {
+    console.log(`[ReportMapService] Creating report map for container: ${containerId}`);
+    console.log(`[ReportMapService] WebMap ID: ${webMapId}`);
 
-    const container = document.getElementById(containerId) as HTMLDivElement;
-    if (!container) {
-      throw new Error(`Container element '${containerId}' not found`);
+    // ENHANCED: Verify WebMap ID is valid
+    if (!webMapId || webMapId === 'YOUR_WEBMAP_ID_HERE') {
+      throw new Error('Invalid WebMap ID. Please configure CONFIG.webMapId in appConfig.ts');
     }
 
-    console.log(`[ReportMap] Creating independent map instance for ${containerId}`);
+    // ENHANCED: Verify container exists
+    const container = document.getElementById(containerId);
+    if (!container) {
+      throw new Error(`Container element with ID '${containerId}' not found in DOM`);
+    }
+
+    console.log('[ReportMapService] Container verified, creating WebMap...');
 
     // Create a NEW WebMap instance (not shared with store)
     const webmap = new WebMap({
       portalItem: { id: webMapId }
     });
 
+    // ENHANCED: Wait for WebMap to load with timeout
+    console.log('[ReportMapService] Loading WebMap...');
+    try {
+      const loadPromise = webmap.load();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('WebMap load timeout')), 20000)
+      );
+
+      await Promise.race([loadPromise, timeoutPromise]);
+      console.log('[ReportMapService] ✅ WebMap loaded successfully');
+    } catch (error) {
+      console.error(`[ReportMapService] ❌ Failed to load WebMap:`, error);
+      throw new Error(`Failed to load WebMap: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
     // Create a NEW MapView instance
+    console.log('[ReportMapService] Creating MapView...');
     const view = new MapView({
       map: webmap,
-      container: container,
+      container: container as HTMLDivElement,
       center: options?.center || CONFIG.map.center,
       zoom: options?.zoom || CONFIG.map.zoom,
       constraints: {
@@ -67,13 +91,13 @@ export class ReportMapService {
       padding: { top: 0 }
     });
 
-    // Wait for map to load
+    // Wait for view to load
     try {
       await view.when();
-      console.log(`[ReportMap] Map loaded successfully for ${containerId}`);
+      console.log(`[ReportMapService] ✅ Map view created successfully for ${containerId}`);
     } catch (error) {
-      console.error(`[ReportMap] Failed to load map for ${containerId}:`, error);
-      throw new Error(`Failed to load report map: ${error}`);
+      console.error(`[ReportMapService] ❌ Failed to create MapView:`, error);
+      throw new Error(`Failed to create MapView: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
     // Add optional widgets

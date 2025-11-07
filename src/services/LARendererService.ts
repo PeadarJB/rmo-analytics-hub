@@ -48,6 +48,7 @@ export default class LARendererService {
   /**
    * Query the LA layer to get the maximum value for a field
    * Used to dynamically set the upper bound of the gradient
+   * ENHANCED: Now works for ALL years, not just 2025
    */
   private static async queryMaxValue(
     layer: FeatureLayer,
@@ -56,43 +57,66 @@ export default class LARendererService {
     year: number,
     metricType: LAMetricType
   ): Promise<number> {
-    const cacheKey = this.getMaxValueCacheKey(kpi, year, metricType);
+    const cacheKey = `max_${fieldName}_${year}`;
 
     // Check cache first
     if (this.maxValueCache.has(cacheKey)) {
-      console.log(`✓ Using cached max value for ${cacheKey}: ${this.maxValueCache.get(cacheKey)}`);
+      console.log(`[LARenderer] Using cached max value for ${fieldName}: ${this.maxValueCache.get(cacheKey)}`);
       return this.maxValueCache.get(cacheKey)!;
     }
 
     try {
+      console.log(`[LARenderer] Querying max value for field: ${fieldName} (year: ${year})`);
+
+      // ENHANCED: Ensure layer is loaded
+      if (!layer.loaded) {
+        await layer.load();
+      }
+
+      // ENHANCED: Verify field exists
+      const fieldExists = layer.fields.some(f => f.name === fieldName);
+      if (!fieldExists) {
+        console.warn(`[LARenderer] Field ${fieldName} does not exist in layer. Available fields:`,
+          layer.fields.map(f => f.name).join(', '));
+        return this.getDefaultMaxForMetric(kpi, metricType);
+      }
+
       const query = layer.createQuery();
       query.where = `${fieldName} IS NOT NULL`;
       query.outStatistics = [{
+        statisticType: 'max',
         onStatisticField: fieldName,
-        outStatisticFieldName: 'maxValue',
-        statisticType: 'max'
+        outStatisticFieldName: 'maxValue'
       }] as any;
 
       const result = await layer.queryFeatures(query);
 
       if (result.features.length > 0 && result.features[0].attributes.maxValue != null) {
         const maxValue = result.features[0].attributes.maxValue;
-        console.log(`✓ Queried max value for ${fieldName}: ${maxValue}`);
+        console.log(`[LARenderer] ✅ Queried max value for ${fieldName}: ${maxValue}`);
 
         // Cache the result
         this.maxValueCache.set(cacheKey, maxValue);
         return maxValue;
+      } else {
+        console.warn(`[LARenderer] No max value returned for ${fieldName}, using default`);
+        return this.getDefaultMaxForMetric(kpi, metricType);
       }
     } catch (error) {
-      console.error(`Error querying max value for ${fieldName}:`, error);
+      console.error(`[LARenderer] Error querying max value for ${fieldName}:`, error);
+      return this.getDefaultMaxForMetric(kpi, metricType);
     }
+  }
 
-    // Fallback to configured max if query fails
-    const fallback = metricType === 'fairOrBetter'
-      ? LA_PERCENTAGE_RANGES[kpi].max
-      : this.getDefaultMaxForAverage(kpi);
-    console.warn(`Using fallback max value: ${fallback}`);
-    return fallback;
+  /**
+   * Get default max value when query fails
+   */
+  private static getDefaultMaxForMetric(kpi: KPIKey, metricType: 'average' | 'fairOrBetter'): number {
+    if (metricType === 'fairOrBetter') {
+      return LA_PERCENTAGE_RANGES[kpi].max;
+    } else {
+      return this.getDefaultMaxForAverage(kpi);
+    }
   }
 
   /**
@@ -149,7 +173,8 @@ export default class LARendererService {
   /**
    * MODE A: Fair or Better percentage renderer
    * Uses SimpleRenderer with visual variables for continuous gradient
-   * Min value from 2019 report, Max value queried from 2025 data
+   * Min value from 2019 report, Max value queried from actual data
+   * ENHANCED: Now queries max for ALL years, not just 2025
    */
   private static async createFairOrBetterRenderer(
     kpi: KPIKey,
@@ -163,12 +188,10 @@ export default class LARendererService {
     // Get min from 2019 report configuration
     const minValue = LA_PERCENTAGE_RANGES[kpi].min;
 
-    // Query max from 2025 data (only for year 2025)
-    const maxValue = year === 2025
-      ? await this.queryMaxValue(layer, fieldName, kpi, year, 'fairOrBetter')
-      : LA_PERCENTAGE_RANGES[kpi].max;
+    // ENHANCED: Query max from actual data for BOTH years (not just 2025)
+    const maxValue = await this.queryMaxValue(layer, fieldName, kpi, year, 'fairOrBetter');
 
-    console.log(`Fair or Better gradient for ${kpi}: ${minValue}% - ${maxValue}%`);
+    console.log(`[LARenderer] Fair or Better gradient for ${kpi} ${year}: ${minValue}% - ${maxValue}%`);
 
     // MPD is inverse (shows % POOR, not % Fair-or-Better)
     const isInverse = kpi === 'mpd';
@@ -199,7 +222,8 @@ export default class LARendererService {
   /**
    * MODE B: Average values renderer
    * Uses SimpleRenderer with visual variables for continuous gradient
-   * Max value queried from 2025 data
+   * Max value queried from actual data
+   * ENHANCED: Now queries max for ALL years, not just 2025
    */
   private static async createAverageValueRenderer(
     kpi: KPIKey,
@@ -220,18 +244,16 @@ export default class LARendererService {
     if (isLowerBetter) {
       // For "lower is better" KPIs, min is best (very good threshold), max is worst (query actual max)
       minValue = thresholds.veryGood || thresholds.good || 0;
-      maxValue = year === 2025
-        ? await this.queryMaxValue(layer, fieldName, kpi, year, 'average')
-        : this.getDefaultMaxForAverage(kpi);
+      // ENHANCED: Query max for ALL years, not just 2025
+      maxValue = await this.queryMaxValue(layer, fieldName, kpi, year, 'average');
     } else {
       // For "higher is better" KPIs (csc, mpd, psci), min is worst, max is best (query actual max)
       minValue = thresholds.poor || 0;
-      maxValue = year === 2025
-        ? await this.queryMaxValue(layer, fieldName, kpi, year, 'average')
-        : this.getDefaultMaxForAverage(kpi);
+      // ENHANCED: Query max for ALL years, not just 2025
+      maxValue = await this.queryMaxValue(layer, fieldName, kpi, year, 'average');
     }
 
-    console.log(`Average gradient for ${kpi}: ${minValue} - ${maxValue}`);
+    console.log(`[LARenderer] Average gradient for ${kpi} ${year}: ${minValue} - ${maxValue}`);
 
     // Set colors based on directionality
     const startColor = isLowerBetter ? colors.veryGood : colors.veryPoor;

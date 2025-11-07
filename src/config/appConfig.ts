@@ -69,7 +69,7 @@ export const FEATURE_LAYER_URLS = {
    * Example format: 'https://services.arcgis.com/{org-id}/arcgis/rest/services/{service-name}/FeatureServer/0'
    */
   roadNetwork: {
-    url: 'PLACEHOLDER_ROAD_NETWORK_URL', // 🔴 REPLACE WITH ACTUAL URL
+    url: 'https://services-eu1.arcgis.com/yKemAZ93UMQ59Hq1/arcgis/rest/services/RegionalRoadSurvey_latest_gdb/FeatureServer/1', // 🔴 REPLACE WITH ACTUAL URL
     title: 'RoadNetwork Temporal 2011 2025', // Match WebMap layer title
     description: 'Line features representing regional road network segments (100m each)',
   },
@@ -82,7 +82,7 @@ export const FEATURE_LAYER_URLS = {
    * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
    */
   roadNetworkSwipe: {
-    url: 'PLACEHOLDER_ROAD_NETWORK_SWIPE_URL', // 🔴 REPLACE WITH ACTUAL URL
+    url: 'https://services-eu1.arcgis.com/yKemAZ93UMQ59Hq1/arcgis/rest/services/RegionalRoadSurvey_latest_gdb/FeatureServer/1', // 🔴 REPLACE WITH ACTUAL URL
     title: 'RoadNetwork Temporal 2011 2025', // Match WebMap layer title
     description: 'Duplicate road network layer for swipe comparison',
   },
@@ -94,7 +94,7 @@ export const FEATURE_LAYER_URLS = {
    * 📍 TO UPDATE: Replace placeholder URL with your actual feature service URL
    */
   laPolygon: {
-    url: 'PLACEHOLDER_LA_POLYGON_URL', // 🔴 REPLACE WITH ACTUAL URL
+    url: 'https://services-eu1.arcgis.com/yKemAZ93UMQ59Hq1/arcgis/rest/services/RegionalRoadSurvey_latest_gdb/FeatureServer/0', // 🔴 REPLACE WITH ACTUAL URL
     title: 'RMO LA data', // Match WebMap layer title
     description: 'Polygon features for Local Authority boundaries with aggregated metrics',
   },

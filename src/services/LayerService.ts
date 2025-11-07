@@ -120,7 +120,7 @@ export default class LayerService {
     } catch (error: any) {
       const endTime = performance.now();
       const loadTimeMs = Math.round(endTime - startTime);
-      
+
       // Record failure metrics
       this.recordMetrics({
         strategyUsed: strategy,
@@ -128,8 +128,8 @@ export default class LayerService {
         endTime,
         duration: loadTimeMs,
         success: false,
-        fallbackUsed,
-        errors: [...errors, error.message]
+        fallbackUsed: false,
+        errors: [error.message]
       });
 
       if (enableLogging) {
@@ -143,8 +143,8 @@ export default class LayerService {
         laLayer: null,
         strategy,
         loadTimeMs,
-        errors: [...errors, error.message],
-        fallbackUsed
+        errors: [error.message],
+        fallbackUsed: false
       };
     }
   }
@@ -391,8 +391,7 @@ export default class LayerService {
 
     return {
       direct: counts.direct > 0 ? Math.round(averages.direct / counts.direct) : 0,
-      webmap: counts.webmap > 0 ? Math.round(averages.webmap / counts.webmap) : 0,
-      hybrid: counts.hybrid > 0 ? Math.round(averages.hybrid / counts.hybrid) : 0
+      webmap: counts.webmap > 0 ? Math.round(averages.webmap / counts.webmap) : 0
     };
   }
 
@@ -404,14 +403,12 @@ export default class LayerService {
   static getSuccessRates(): Record<LayerStrategy, number> {
     const successes = {
       direct: 0,
-      webmap: 0,
-      hybrid: 0
+      webmap: 0
     };
 
     const totals = {
       direct: 0,
-      webmap: 0,
-      hybrid: 0
+      webmap: 0
     };
 
     this.metrics.forEach(metric => {
@@ -423,8 +420,7 @@ export default class LayerService {
 
     return {
       direct: totals.direct > 0 ? Math.round((successes.direct / totals.direct) * 100) : 0,
-      webmap: totals.webmap > 0 ? Math.round((successes.webmap / totals.webmap) * 100) : 0,
-      hybrid: totals.hybrid > 0 ? Math.round((successes.hybrid / totals.hybrid) * 100) : 0
+      webmap: totals.webmap > 0 ? Math.round((successes.webmap / totals.webmap) * 100) : 0
     };
   }
 
@@ -477,11 +473,9 @@ export default class LayerService {
     console.log('\nAverage Load Times:');
     console.log(`  Direct:  ${avgTimes.direct}ms`);
     console.log(`  WebMap:  ${avgTimes.webmap}ms`);
-    console.log(`  Hybrid:  ${avgTimes.hybrid}ms`);
     console.log('\nSuccess Rates:');
     console.log(`  Direct:  ${successRates.direct}%`);
     console.log(`  WebMap:  ${successRates.webmap}%`);
-    console.log(`  Hybrid:  ${successRates.hybrid}%`);
     console.log(`\nFallbacks used: ${fallbackCount}/${this.metrics.length}`);
     console.log('========================================\n');
   }

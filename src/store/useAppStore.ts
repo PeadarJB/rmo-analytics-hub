@@ -171,15 +171,21 @@ const useAppStore = create<AppState>()(
         initializeMapWithWebMap: async (containerId: string) => {
           const state = get();
 
-          // Guard against double initialization
-          if (state.mapInitialized) {
-            console.log('[Map Init] Already initialized');
+          // Strengthened guard: Check both initialized flag AND layer existence
+          if (state.mapInitialized || state.roadLayer) {
+            console.log('[Map Init] Already initialized, skipping');
             return;
           }
 
           const container = document.getElementById(containerId);
           if (!container) {
             throw new Error(`Container ${containerId} not found`);
+          }
+
+          // Additional guard: Prevent concurrent initialization
+          if (state.loading) {
+            console.log('[Map Init] Initialization already in progress');
+            return;
           }
 
           set({ loading: true, loadingMessage: 'Loading WebMap...' });
@@ -195,15 +201,15 @@ const useAppStore = create<AppState>()(
 
             // Extract layers from WebMap
             const roadLayer = webmap.layers.find(
-              l => l.title === CONFIG.roadLayerTitle
+              l => l.title === CONFIG.roadNetworkLayerTitle
             ) as FeatureLayer;
 
             const roadLayerSwipe = webmap.layers.find(
-              l => l.title === CONFIG.roadLayerSwipeTitle
+              l => l.title === CONFIG.roadNetworkLayerSwipeTitle
             ) as FeatureLayer;
 
             const laLayer = webmap.layers.find(
-              l => l.title === CONFIG.laLayerTitle
+              l => l.title === CONFIG.laPolygonLayerTitle
             ) as FeatureLayer;
 
             if (!roadLayer) {
@@ -241,18 +247,24 @@ const useAppStore = create<AppState>()(
 
             // Apply initial renderer
             console.log('[Map Init] Applying initial renderer...');
-            const success = await RendererService.applyRenderer(
-              roadLayer,
+            const renderer = RendererService.createRenderer(
               state.activeKpi,
               state.currentFilters.year,
-              state.themeMode
+              state.themeMode,
+              true
             );
 
-            if (!success) {
-              console.error('[Map Init] Failed to apply initial renderer');
-            } else {
-              console.log('[Map Init] ✅ Initial renderer applied successfully');
-            }
+            await RendererService.applyRendererWithVerification(
+              roadLayer,
+              renderer,
+              {
+                maxRetries: 3,
+                retryDelay: 100,
+                logProgress: true
+              }
+            );
+
+            console.log('[Map Init] ✅ Initial renderer applied successfully');
 
             // Preload renderers in background
             RendererService.preloadAllRenderers(state.themeMode).catch(err =>

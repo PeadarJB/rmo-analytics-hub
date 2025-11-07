@@ -72,6 +72,10 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
   const [showGrid, setShowGrid] = useState(true);
   const [compareYears, setCompareYears] = useState(false);
 
+  // Progress indicator state
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('');
+
   // Store cumulative data for all KPIs
   const [cumulativeData, setCumulativeData] = useState<Record<KPIKey, CumulativeData> | null>(null);
   const [comparisonData, setComparisonData] = useState<Record<KPIKey, CumulativeData> | null>(null);
@@ -194,12 +198,19 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
       try {
         console.log(`[CumulativeFrequency] Querying all features for ${kpi}...`);
 
-        const result = await PaginationService.queryAllFeatures(roadLayer, {
-          where: `${fieldName} IS NOT NULL`,
-          outFields: [fieldName],
-          returnGeometry: false,
-          orderByFields: ['OBJECTID ASC']
-        });
+        const result = await PaginationService.queryAllFeaturesWithProgress(
+          roadLayer,
+          {
+            where: `${fieldName} IS NOT NULL`,
+            outFields: [fieldName],
+            returnGeometry: false,
+            orderByFields: ['OBJECTID ASC']
+          },
+          (progress, message) => {
+            setLoadingProgress(progress);
+            setLoadingMessage(`Loading ${KPI_LABELS[kpi]}: ${message}`);
+          }
+        );
 
         console.log(`[CumulativeFrequency] Retrieved ${result.totalCount} features for ${kpi} (${result.pagesQueried} pages)`);
 
@@ -383,10 +394,25 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
       <div style={{
         height: 500,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        gap: 16
       }}>
-        <Spin size="large" tip="Loading cumulative frequency data..." />
+        <Spin size="large" />
+        <div style={{ textAlign: 'center' }}>
+          <div>Loading cumulative frequency data...</div>
+          {loadingMessage && (
+            <div style={{ marginTop: 8, color: token.colorTextSecondary }}>
+              {loadingMessage}
+            </div>
+          )}
+          {loadingProgress > 0 && (
+            <div style={{ marginTop: 4 }}>
+              Progress: {loadingProgress}%
+            </div>
+          )}
+        </div>
       </div>
     );
   }

@@ -1,6 +1,7 @@
 // src/services/NetworkDataService.ts
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import * as geometryEngine from '@arcgis/core/geometry/geometryEngine';
+import PaginationService from './PaginationService';
 
 // Constants - ALL segments are standardized to 100 meters
 const SEGMENT_LENGTH_M = 100;
@@ -67,13 +68,16 @@ export class NetworkDataService {
     }
 
     try {
-      // Query features with LA only - count segments per LA
-      const query = this.roadLayer.createQuery();
-      query.where = this.buildDataExistsWhereClause(year);
-      query.outFields = ['LA'];
-      query.returnGeometry = false;
+      console.log('[NetworkDataService] Querying road length by LA...');
 
-      const result = await this.roadLayer.queryFeatures(query);
+      // Query features with LA only - count segments per LA
+      const result = await PaginationService.queryAllFeatures(this.roadLayer, {
+        where: this.buildDataExistsWhereClause(year),
+        outFields: ['LA'],
+        returnGeometry: false
+      });
+
+      console.log(`[NetworkDataService] Retrieved ${result.totalCount} segments (${result.pagesQueried} pages)`);
 
       // Group by LA and count segments
       const laGroups = new Map<string, number>();
@@ -113,13 +117,16 @@ export class NetworkDataService {
     }
 
     try {
-      // Query features with LA only - count segments per LA
-      const query = this.roadLayer.createQuery();
-      query.where = this.buildDataExistsWhereClause(year);
-      query.outFields = ['LA'];
-      query.returnGeometry = false;
+      console.log('[NetworkDataService] Querying road width by LA...');
 
-      const result = await this.roadLayer.queryFeatures(query);
+      // Query features with LA only - count segments per LA
+      const result = await PaginationService.queryAllFeatures(this.roadLayer, {
+        where: this.buildDataExistsWhereClause(year),
+        outFields: ['LA'],
+        returnGeometry: false
+      });
+
+      console.log(`[NetworkDataService] Retrieved ${result.totalCount} segments (${result.pagesQueried} pages)`);
 
       // Group by LA and count segments
       const laGroups = new Map<string, number>();
@@ -240,12 +247,15 @@ export class NetworkDataService {
     }
 
     try {
-      const query = this.roadLayer.createQuery();
-      query.where = this.buildDataExistsWhereClause(year);
-      query.outFields = ['LA'];
-      query.returnGeometry = false;
+      console.log('[NetworkDataService] Querying network summary...');
 
-      const result = await this.roadLayer.queryFeatures(query);
+      const result = await PaginationService.queryAllFeatures(this.roadLayer, {
+        where: this.buildDataExistsWhereClause(year),
+        outFields: ['LA'],
+        returnGeometry: false
+      });
+
+      console.log(`[NetworkDataService] Retrieved ${result.totalCount} segments (${result.pagesQueried} pages)`);
 
       // Calculate summary stats
       const uniqueLAs = new Set(result.features.map(f => f.attributes.LA));

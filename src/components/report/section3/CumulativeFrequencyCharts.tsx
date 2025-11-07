@@ -31,8 +31,6 @@ ChartJS.register(
   Filler
 );
 
-// CumulativeData is now imported from CumulativeFrequencyService
-
 interface CumulativeFrequencyChartsProps {
   year?: number;
 }
@@ -60,15 +58,11 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
 
   // Progress indicator state
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingMessage, setLoadingMessage] = useState('');
+  const [loadingMessage, setLoadingMessage] = useState('Initializing...');
 
   // Store cumulative data for all KPIs
   const [cumulativeData, setCumulativeData] = useState<Record<KPIKey, CumulativeData> | null>(null);
   const [comparisonData, setComparisonData] = useState<Record<KPIKey, CumulativeData> | null>(null);
-
-  // Progress tracking
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingMessage, setLoadingMessage] = useState('Initializing...');
 
   // KPI configuration with ranges and colors
   const kpiConfigs: Record<KPIKey, {
@@ -128,45 +122,6 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
 
     const kpiKeys: KPIKey[] = ['iri', 'rut', 'mpd', 'csc', 'psci'];
 
-<<<<<<< HEAD
-    for (const kpi of kpiKeys) {
-      const fieldName = getKPIFieldName(kpi, targetYear, false);
-      const config = kpiConfigs[kpi];
-
-      try {
-        console.log(`[CumulativeFrequency] Querying all features for ${kpi}...`);
-
-        const result = await PaginationService.queryAllFeaturesWithProgress(
-          roadLayer,
-          {
-            where: `${fieldName} IS NOT NULL`,
-            outFields: [fieldName],
-            returnGeometry: false,
-            orderByFields: ['OBJECTID ASC']
-          },
-          (progress, message) => {
-            setLoadingProgress(progress);
-            setLoadingMessage(`Loading ${KPI_LABELS[kpi]}: ${message}`);
-          }
-        );
-
-        console.log(`[CumulativeFrequency] Retrieved ${result.totalCount} features for ${kpi} (${result.pagesQueried} pages)`);
-
-        const values = result.features
-          .map(f => f.attributes[fieldName] as number)
-          .filter(v => v !== null && v !== undefined && !isNaN(v));
-
-        const dataPoints = calculateCumulativeDistribution(values, config.ranges);
-        const stats = calculateStats(values);
-
-        results[kpi] = { dataPoints, stats };
-      } catch (err) {
-        console.error(`Error fetching ${kpi} data:`, err);
-        results[kpi] = {
-          dataPoints: [],
-          stats: { average: 0, median: 0, percentile90: 0, count: 0 }
-        };
-=======
     // Fetch all KPIs in parallel with progress tracking
     const results = await CumulativeFrequencyService.fetchCumulativeDataForAllKPIs(
       roadLayer,
@@ -178,7 +133,6 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
         const progress = Math.round((index / total) * 100);
         setLoadingProgress(progress);
         setLoadingMessage(`Loading ${KPI_LABELS[kpi]} (${index}/${total})...`);
->>>>>>> 328b4417378539a7e10d039723ab725f130052db
       }
     );
 
@@ -361,20 +315,6 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
         gap: 16
       }}>
         <Spin size="large" />
-<<<<<<< HEAD
-        <div style={{ textAlign: 'center' }}>
-          <div>Loading cumulative frequency data...</div>
-          {loadingMessage && (
-            <div style={{ marginTop: 8, color: token.colorTextSecondary }}>
-              {loadingMessage}
-            </div>
-          )}
-          {loadingProgress > 0 && (
-            <div style={{ marginTop: 4 }}>
-              Progress: {loadingProgress}%
-            </div>
-          )}
-=======
         <div style={{ width: 300 }}>
           <Progress
             percent={loadingProgress}
@@ -391,7 +331,6 @@ const CumulativeFrequencyCharts: React.FC<CumulativeFrequencyChartsProps> = ({
           }}>
             {loadingMessage}
           </div>
->>>>>>> 328b4417378539a7e10d039723ab725f130052db
         </div>
       </div>
     );
